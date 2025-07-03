@@ -1,0 +1,2 @@
+# ObjectDataContainer
+効率的にオブジェクトのデータを管理するUnity用のコレクション作成。
