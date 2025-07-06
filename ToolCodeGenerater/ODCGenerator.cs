@@ -3,31 +3,43 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using System;
 using System.Linq;
 
-namespace ToolCodeGenerator
+namespace ToolCodeGenerator.GenContainer
 {
+    /// <summary>
+    /// オブジェクトデータコンテナのコード生成を行うSource Generator
+    /// </summary>
     [Generator(LanguageNames.CSharp)]
-    public class ODCGenerator : IIncrementalGenerator
+    public partial class ODCGenerator : IIncrementalGenerator
     {
+        /// <summary>
+        /// Source Generatorの初期化を行います
+        /// </summary>
+        /// <param name="context">初期化コンテキスト</param>
         public void Initialize(IncrementalGeneratorInitializationContext context)
         {
             // ContainerSettingAttributeが付いたクラスを検出
-            var source = context.SyntaxProvider.ForAttributeWithMetadataName(
-                typeof(ContainerSettingAttribute).FullName,　// 解析対象クラスについたアトリビュート
+            IncrementalValuesProvider<GeneratorAttributeSyntaxContext> source = context.SyntaxProvider.ForAttributeWithMetadataName(
+                "ToolAttribute.GenContainer.ContainerSettingAttribute",　// 解析対象クラスについたアトリビュート
                 static (node, token) => node is ClassDeclarationSyntax, // クラスの解析情報だけをフィルター
                 static (classContext, token) => classContext);// クラスの解析情報をそのまま渡すという意味のデリゲート
 
             context.RegisterSourceOutput(source, GenerateContainer);
         }
 
+        /// <summary>
+        /// コンテナクラスのコード生成を実行します
+        /// </summary>
+        /// <param name="context">生成コンテキスト</param>
+        /// <param name="source">属性が付与されたクラスの情報</param>
         static void GenerateContainer(SourceProductionContext context, GeneratorAttributeSyntaxContext source)
         {
-            var typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
-            var typeNode = (ClassDeclarationSyntax)source.TargetNode;
-            var attribute = source.Attributes[0];
+            INamedTypeSymbol typeSymbol = (INamedTypeSymbol)source.TargetSymbol;
+            ClassDeclarationSyntax typeNode = (ClassDeclarationSyntax)source.TargetNode;
+            AttributeData attribute = source.Attributes[0];
 
             // 型配列を取得
-            var structTypes = GetTypesFromAttribute(attribute.ConstructorArguments[0]);
-            var classTypes = GetTypesFromAttribute(attribute.ConstructorArguments[1]);
+            INamedTypeSymbol[] structTypes = GetTypesFromAttribute(attribute.ConstructorArguments[0]);
+            INamedTypeSymbol[] classTypes = GetTypesFromAttribute(attribute.ConstructorArguments[1]);
 
             if ( structTypes.Length == 0 && classTypes.Length == 0 )
             {
@@ -39,41 +51,57 @@ namespace ToolCodeGenerator
             }
 
             // 名前空間取得
-            var namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
+            string namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
                 ? ""
                 : typeSymbol.ContainingNamespace.ToDisplayString();
 
             // コード生成
-            var code = GenerateContainerCode(typeSymbol.Name, namespaceName, structTypes, classTypes);
+            string code = GenerateContainerCode(typeSymbol.Name, namespaceName, structTypes, classTypes);
             context.AddSource($"{typeSymbol.Name}.Container.g.cs", code);
         }
 
+        /// <summary>
+        /// 属性引数から型配列を取得します
+        /// </summary>
+        /// <param name="argument">属性の引数</param>
+        /// <returns>型シンボルの配列</returns>
         static INamedTypeSymbol[] GetTypesFromAttribute(TypedConstant argument)
         {
             return argument.Values
                 .Select(v => v.Value as INamedTypeSymbol)
                 .Where(t => t != null)
-                .ToArray();
+                .ToArray()!;
         }
 
+        /// <summary>
+        /// コンテナクラス全体のコードを生成します
+        /// </summary>
+        /// <param name="className">クラス名</param>
+        /// <param name="namespaceName">名前空間名</param>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>生成されたコード</returns>
         static string GenerateContainerCode(string className, string namespaceName, INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
         {
-            // 各種コード片を生成
-            var entryStruct = GenerateEntryStruct();
-            var memoryLayoutStruct = GenerateMemoryLayoutStruct(structTypes);
-            var fields = GenerateFields(structTypes, classTypes);
-            var properties = GenerateProperties(classTypes);
-            var initializeMethod = GenerateInitializeMethod(className, structTypes, classTypes);
-            var addMethods = GenerateAddMethods(structTypes, classTypes);
-            var removeMethods = GenerateRemoveMethods(structTypes, classTypes);
-            var getMethods = GenerateGetMethods(structTypes, classTypes);
-            var utilityMethods = GenerateUtilityMethods(structTypes, classTypes);
-            var internalMethods = GenerateInternalMethods(structTypes);
-            var disposeMethod = GenerateDisposeMethod();
+            // 各種コード片を生成（指定された順序で配置）
+            string typeDefinitions = GenerateTypeDefinitions(structTypes);
+            string constantFields = GenerateConstantFields();
+            string fields = GenerateFields(structTypes, classTypes);
+            string properties = GenerateProperties(classTypes);
+            // インデクサは現在なし
+            string constructor = GenerateConstructor(className);
+            // メソッドをまとめて配置
+            string initializeMethod = GenerateInitializeMethod(className, structTypes, classTypes);
+            string addMethods = GenerateAddMethods(structTypes, classTypes);
+            string removeMethods = GenerateRemoveMethods(structTypes, classTypes);
+            string getMethods = GenerateGetMethods(structTypes, classTypes);
+            string utilityMethods = GenerateUtilityMethods(structTypes, classTypes);
+            string internalMethods = GenerateInternalMethods(structTypes);
+            string disposeMethod = GenerateDisposeMethod();
 
             // 名前空間の開始と終了
-            var namespaceStart = !string.IsNullOrEmpty(namespaceName) ? $"namespace {namespaceName}\n{{\n" : "";
-            var namespaceEnd = !string.IsNullOrEmpty(namespaceName) ? "}\n" : "";
+            string namespaceStart = !string.IsNullOrEmpty(namespaceName) ? $"namespace {namespaceName}\n{{\n" : "";
+            string namespaceEnd = !string.IsNullOrEmpty(namespaceName) ? "}\n" : "";
 
             // メインコードテンプレート
             return $$"""
@@ -88,60 +116,123 @@ using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 
-{{namespaceStart}}    public unsafe partial class {{className}}
+{{namespaceStart}}    /// <summary>
+    /// 高性能なオブジェクトデータコンテナクラス
+    /// GameObjectをキーとして複数のデータ型を効率的に管理します
+    /// </summary>
+    public unsafe partial class {{className}} : IDisposable
     {
-{{entryStruct}}
-{{memoryLayoutStruct}}
-{{fields}}
-{{properties}}
-{{initializeMethod}}
-{{addMethods}}
-{{removeMethods}}
-{{getMethods}}
-{{utilityMethods}}
-{{internalMethods}}
-{{disposeMethod}}    }
+{{typeDefinitions}}{{constantFields}}{{fields}}{{properties}}{{constructor}}{{initializeMethod}}{{addMethods}}{{removeMethods}}{{getMethods}}{{utilityMethods}}{{internalMethods}}{{disposeMethod}}    }
 {{namespaceEnd}}
 """;
         }
 
+        /// <summary>
+        /// 型定義部分のコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <returns>型定義のコード</returns>
+        static string GenerateTypeDefinitions(INamedTypeSymbol[] structTypes)
+        {
+            string entryStruct = GenerateEntryStruct();
+            string memoryLayoutStruct = GenerateMemoryLayoutStruct(structTypes);
+
+            return $$"""
+
+        #region 型定義
+
+{{entryStruct}}{{memoryLayoutStruct}}
+        #endregion
+
+""";
+        }
+
+        /// <summary>
+        /// Entryエントリー構造体のコードを生成します
+        /// </summary>
+        /// <returns>Entry構造体のコード</returns>
         static string GenerateEntryStruct()
         {
             return """
-        private partial struct Entry
+        /// <summary>
+        /// ハッシュテーブルのエントリを表す構造体
+        /// </summary>
+        private struct Entry
         {
+            /// <summary>ハッシュコード</summary>
             public int HashCode;
+            
+            /// <summary>値のインデックス</summary>
             public int ValueIndex;
+            
+            /// <summary>次のエントリのインデックス（衝突時のチェーン）</summary>
             public int NextInBucket;
         }
 
 """;
         }
 
+        /// <summary>
+        /// MemoryLayout構造体のコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <returns>MemoryLayout構造体のコード</returns>
         static string GenerateMemoryLayoutStruct(INamedTypeSymbol[] structTypes)
         {
-            var offsets = string.Join("\n", structTypes.Select(type =>
+            string offsets = string.Join("\n", structTypes.Select(type =>
+                $"            /// <summary>{type.Name}のメモリオフセット</summary>\n" +
                 $"            public int {type.Name}Offset;"));
 
             return $$"""
+        /// <summary>
+        /// メモリレイアウト情報を管理する構造体
+        /// </summary>
         private struct MemoryLayout
         {
 {{offsets}}
+            /// <summary>総メモリサイズ</summary>
             public int TotalSize;
         }
 
 """;
         }
 
+        /// <summary>
+        /// 定数フィールドのコードを生成します
+        /// </summary>
+        /// <returns>定数フィールドのコード</returns>
+        static string GenerateConstantFields()
+        {
+            return """
+
+        #region 定数フィールド
+
+        /// <summary>デフォルトの最大容量</summary>
+        private const int DEFAULT_MAX_CAPACITY = 130;
+
+        #endregion
+
+""";
+        }
+
+        /// <summary>
+        /// フィールド部分のコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>フィールドのコード</returns>
         static string GenerateFields(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
         {
-            var unsafeLists = string.Join("\n", structTypes.Select(type =>
+            string unsafeLists = string.Join("\n", structTypes.Select(type =>
+                $"        /// <summary>{type.Name}データのUnsafeList</summary>\n" +
                 $"        private UnsafeList<{type.ToDisplayString()}> _{ToCamelCase(type.Name)};"));
 
-            var arrays = string.Join("\n", classTypes.Select(type =>
+            string arrays = string.Join("\n", classTypes.Select(type =>
+                $"        /// <summary>{type.Name}データの配列</summary>\n" +
                 $"        private {type.ToDisplayString()}[] _{ToCamelCase(type.Name)}s;"));
 
             return $$"""
+
         #region フィールド
 
         /// <summary>
@@ -163,6 +254,10 @@ using UnityEngine;
         /// 一括確保したメモリブロック
         /// </summary>
         private byte* _bulkMemory;
+        
+        /// <summary>
+        /// 総メモリサイズ
+        /// </summary>
         private int _totalMemorySize;
 
         /// <summary>
@@ -188,7 +283,6 @@ using UnityEngine;
         #region 管理対象のデータ
 
 {{unsafeLists}}
-
 {{arrays}}
 
         #endregion
@@ -198,29 +292,35 @@ using UnityEngine;
 """;
         }
 
+        /// <summary>
+        /// プロパティ部分のコードを生成します
+        /// </summary>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>プロパティのコード</returns>
         static string GenerateProperties(INamedTypeSymbol[] classTypes)
         {
-            var spanProperties = string.Join("\n", classTypes.Select(type =>
-                $"        public Span<{type.ToDisplayString()}> Get{type.Name}s => _{ToCamelCase(type.Name)}s.AsSpan().Slice(0, _count);"));
+            string spanProperties = string.Join("\n", classTypes.Select(type =>
+                $"        /// <summary>{type.Name}データのSpanを取得します</summary>\n" +
+                $"        public Span<{type.ToDisplayString()}> Get{type.Name}s => this._{ToCamelCase(type.Name)}s.AsSpan().Slice(0, this._count);"));
 
             return $$"""
+
         #region プロパティ（生成）
 
         /// <summary>
         /// 現在の要素数
         /// </summary>
-        public int Count => _count;
+        public int Count => this._count;
 
         /// <summary>
         /// 最大容量
         /// </summary>
-        public int MaxCapacity => _maxCapacity;
+        public int MaxCapacity => this._maxCapacity;
 
         /// <summary>
         /// 使用率（0.0～1.0）
         /// </summary>
-        public float UsageRatio => (float)_count / _maxCapacity;
-
+        public float UsageRatio => (float)this._count / this._maxCapacity;
 {{spanProperties}}
 
         #endregion
@@ -228,50 +328,92 @@ using UnityEngine;
 """;
         }
 
+        /// <summary>
+        /// コンストラクタのコードを生成します
+        /// </summary>
+        /// <param name="className">クラス名</param>
+        /// <returns>コンストラクタのコード</returns>
+        static string GenerateConstructor(string className)
+        {
+            return $$"""
+
+        #region コンストラクタ
+
+        /// <summary>
+        /// コンストラクタ
+        /// </summary>
+        /// <param name="maxCapacity">最大容量(デフォルト: 130)</param>
+        /// <param name="allocator">メモリアロケータ(デフォルト: Persistent)</param>
+        public {{className}}(int maxCapacity = DEFAULT_MAX_CAPACITY, Allocator allocator = Allocator.Persistent)
+        {
+            this.InitializeContainer(maxCapacity, allocator);
+        }
+
+        #endregion
+
+""";
+        }
+
+        /// <summary>
+        /// 初期化メソッドのコードを生成します
+        /// </summary>
+        /// <param name="className">クラス名</param>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>初期化メソッドのコード</returns>
         static string GenerateInitializeMethod(string className, INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
         {
-            var unsafeListInits = string.Join("\n", structTypes.Select(type => $$"""
-            _{{{ToCamelCase(type.Name)}}} = new UnsafeList<{{{type.ToDisplayString()}}}>(
-                ({{{type.ToDisplayString()}}*)(_bulkMemory + layout.{{{type.Name}}}Offset),
-                maxCapacity);
-            _{{{ToCamelCase(type.Name)}}}.Length = 0;
-            """));
+            string unsafeListInits = string.Join("\n", structTypes.Select(type =>
+                $"            this._{ToCamelCase(type.Name)} = new UnsafeList<{type.ToDisplayString()}>(" +
+                $"\n                ({type.ToDisplayString()}*)(this._bulkMemory + layout.{type.Name}Offset)," +
+                $"\n                maxCapacity);" +
+                $"\n            this._{ToCamelCase(type.Name)}.Length = 0;"));
 
-            var arrayInits = string.Join("\n", classTypes.Select(type =>
-                $"            _{ToCamelCase(type.Name)}s = new {type.ToDisplayString()}[maxCapacity];"));
+            string arrayInits = string.Join("\n", classTypes.Select(type =>
+                $"            this._{ToCamelCase(type.Name)}s = new {type.ToDisplayString()}[maxCapacity];"));
 
             return $$"""
+
         #region 初期化
 
         /// <summary>
         /// コンテナの初期化処理
         /// </summary>
-        partial void InitializeContainer(int maxCapacity, Allocator allocator)
+        /// <param name="maxCapacity">最大容量</param>
+        /// <param name="allocator">メモリアロケータ</param>
+        private void InitializeContainer(int maxCapacity, Allocator allocator)
         {
-            _maxCapacity = maxCapacity;
-            _allocator = allocator;
-            _count = 0;
-            _isDisposed = false;
+
+            // 一万以上のサイズにはエラーを出す。
+            // なんでもスタックに置けばいいというわけでもないため制限。
+            if ( maxCapacity > 10000 )
+            {
+                throw new ArgumentOutOfRangeException("生成可能なコンテナのサイズは最大10000です。Capacityを範囲内に設定してください。");
+            }
+
+            this._maxCapacity = maxCapacity;
+            this._allocator = allocator;
+            this._count = 0;
+            this._isDisposed = false;
 
             // バケット配列の初期化
-            _buckets = new int[BUCKET_COUNT];
-            _buckets.AsSpan().Fill(-1);
+            this._buckets = new int[MakePrimeSizeBucket(maxCapacity)];
+            this._buckets.AsSpan().Fill(-1);
 
             // エントリリストの初期化
-            _entries = new UnsafeList<Entry>(BUCKET_COUNT * 2, allocator);
+            this._entries = new UnsafeList<Entry>(this._buckets.Length * 2, allocator);
 
             // 削除エントリ保管用のスタック作成
-            _freeEntry = new Stack<int>(maxCapacity);
+            this._freeEntry = new Stack<int>(maxCapacity);
 
             // メモリレイアウト計算とメモリ確保
-            MemoryLayout layout = CalculateMemoryLayout(maxCapacity);
-            _totalMemorySize = layout.TotalSize;
-            _bulkMemory = (byte*)UnsafeUtility.Malloc(_totalMemorySize, 64, allocator);
-            UnsafeUtility.MemClear(_bulkMemory, _totalMemorySize);
+            MemoryLayout layout = this.CalculateMemoryLayout(maxCapacity);
+            this._totalMemorySize = layout.TotalSize;
+            this._bulkMemory = (byte*)UnsafeUtility.Malloc(this._totalMemorySize, 64, allocator);
+            UnsafeUtility.MemClear(this._bulkMemory, this._totalMemorySize);
 
             // データ構造の初期化
 {{unsafeListInits}}
-
 {{arrayInits}}
         }
 
@@ -280,55 +422,69 @@ using UnityEngine;
 """;
         }
 
+        /// <summary>
+        /// 追加・更新メソッドのコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>追加・更新メソッドのコード</returns>
         static string GenerateAddMethods(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
         {
-            var allParams = structTypes.Select(type => $"{type.ToDisplayString()} {ToCamelCase(type.Name)}")
+            string[] allParams = structTypes.Select(type => $"{type.ToDisplayString()} {ToCamelCase(type.Name)}")
                 .Concat(classTypes.Select(type => $"{type.ToDisplayString()} {ToCamelCase(type.Name)}"))
                 .ToArray();
 
-            var paramNames = allParams.Select(p => p.Split(' ')[1]).ToArray();
+            string[] paramNames = allParams.Select(p => p.Split(' ')[1]).ToArray();
 
-            var updateAssignments = string.Join("\n",
-                structTypes.Select(type => $"                _{ToCamelCase(type.Name)}[existingIndex] = {ToCamelCase(type.Name)};")
-                .Concat(classTypes.Select(type => $"                _{ToCamelCase(type.Name)}s[existingIndex] = {ToCamelCase(type.Name)};")));
+            string updateAssignments = string.Join("\n",
+                structTypes.Select(type => $"                this._{ToCamelCase(type.Name)}[existingIndex] = {ToCamelCase(type.Name)};")
+                .Concat(classTypes.Select(type => $"                this._{ToCamelCase(type.Name)}s[existingIndex] = {ToCamelCase(type.Name)};")));
 
-            var addAssignments = string.Join("\n",
-                structTypes.Select(type => $"            _{ToCamelCase(type.Name)}.AddNoResize({ToCamelCase(type.Name)});")
-                .Concat(classTypes.Select(type => $"            _{ToCamelCase(type.Name)}s[dataIndex] = {ToCamelCase(type.Name)};")));
+            string addAssignments = string.Join("\n",
+                structTypes.Select(type => $"            this._{ToCamelCase(type.Name)}.AddNoResize({ToCamelCase(type.Name)});")
+                .Concat(classTypes.Select(type => $"            this._{ToCamelCase(type.Name)}s[dataIndex] = {ToCamelCase(type.Name)};")));
 
             return $$"""
+
         #region 追加・更新
 
         /// <summary>
-        /// GameObjectとデータを追加
+        /// GameObjectとデータを追加します
         /// </summary>
+        /// <param name="obj">キーとなるGameObject</param>
+        /// <returns>追加されたデータのインデックス</returns>
+        /// <exception cref="ArgumentNullException">objがnullの場合</exception>
+        /// <exception cref="InvalidOperationException">最大容量を超えた場合</exception>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Add(GameObject obj{{(allParams.Length > 0 ? ", " : "")}}{{string.Join(", ", allParams)}})
         {
             if (obj == null) throw new ArgumentNullException(nameof(obj));
-            return AddByHash(obj.GetHashCode(){{(paramNames.Length > 0 ? ", " : "")}}{{string.Join(", ", paramNames)}});
+            return this.AddByHash(obj.GetHashCode(){{(paramNames.Length > 0 ? ", " : "")}}{{string.Join(", ", paramNames)}});
         }
 
         /// <summary>
-        /// ハッシュコードでデータを追加
+        /// ハッシュコードでデータを追加します
         /// </summary>
+        /// <param name="hashCode">ハッシュコード</param>
+        /// <returns>追加されたデータのインデックス</returns>
+        /// <exception cref="InvalidOperationException">最大容量を超えた場合</exception>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int AddByHash(int hashCode{{(allParams.Length > 0 ? ", " : "")}}{{string.Join(", ", allParams)}})
         {
-            if (TryGetIndexByHash(hashCode, out int existingIndex))
+            if (this.TryGetIndexByHash(hashCode, out int existingIndex))
             {
 {{updateAssignments}}
                 return existingIndex;
             }
 
-            if (_count >= _maxCapacity)
-                throw new InvalidOperationException($"Maximum capacity ({_maxCapacity}) exceeded");
+            if (this._count >= this._maxCapacity)
+                throw new InvalidOperationException($"Maximum capacity ({this._maxCapacity}) exceeded");
 
-            int dataIndex = _count;
-
+            int dataIndex = this._count;
 {{addAssignments}}
 
-            RegisterToHashTable(hashCode, dataIndex);
-            _count++;
+            this.RegisterToHashTable(hashCode, dataIndex);
+            this._count++;
             return dataIndex;
         }
 
@@ -337,41 +493,53 @@ using UnityEngine;
 """;
         }
 
+        /// <summary>
+        /// 削除メソッドのコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>削除メソッドのコード</returns>
         static string GenerateRemoveMethods(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
         {
-            var swapBackCalls = string.Join("\n", structTypes.Select(type =>
-                $"                _{ToCamelCase(type.Name)}.RemoveAtSwapBack(dataIndex);"));
+            string swapBackCalls = string.Join("\n", structTypes.Select(type =>
+                $"                this._{ToCamelCase(type.Name)}.RemoveAtSwapBack(dataIndex);"));
 
-            var arraySwaps = string.Join("\n", classTypes.Select(type =>
-                $"                _{ToCamelCase(type.Name)}s[dataIndex] = _{ToCamelCase(type.Name)}s[lastIndex];"));
+            string arraySwaps = string.Join("\n", classTypes.Select(type =>
+                $"                this._{ToCamelCase(type.Name)}s[dataIndex] = this._{ToCamelCase(type.Name)}s[lastIndex];"));
 
-            var lengthDecrements = string.Join("\n", structTypes.Select(type =>
-                $"                _{ToCamelCase(type.Name)}.Length--;"));
+            string lengthDecrements = string.Join("\n", structTypes.Select(type =>
+                $"                this._{ToCamelCase(type.Name)}.Length--;"));
 
-            var nullAssignments = string.Join("\n", classTypes.Select(type =>
-                $"            _{ToCamelCase(type.Name)}s[lastIndex] = null;"));
+            string nullAssignments = string.Join("\n", classTypes.Select(type =>
+                $"            this._{ToCamelCase(type.Name)}s[lastIndex] = null;"));
 
             return $$"""
+
         #region 削除（スワップ削除）
 
         /// <summary>
-        /// GameObjectを削除
+        /// GameObjectを削除します（スワップ削除）
         /// </summary>
+        /// <param name="obj">削除するGameObject</param>
+        /// <returns>削除に成功した場合true</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Remove(GameObject obj)
         {
             if (obj == null) return false;
-            return RemoveByHash(obj.GetHashCode());
+            return this.RemoveByHash(obj.GetHashCode());
         }
 
         /// <summary>
-        /// ハッシュコードで削除
+        /// ハッシュコードで削除します（スワップ削除）
         /// </summary>
+        /// <param name="hashCode">削除するハッシュコード</param>
+        /// <returns>削除に成功した場合true</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool RemoveByHash(int hashCode)
         {
-            if (!TryGetIndexByHash(hashCode, out int dataIndex)) return false;
+            if (!this.TryGetIndexByHash(hashCode, out int dataIndex)) return false;
 
-            int lastIndex = _count - 1;
+            int lastIndex = this._count - 1;
             if (dataIndex != lastIndex)
             {
 {{swapBackCalls}}
@@ -381,11 +549,10 @@ using UnityEngine;
             {
 {{lengthDecrements}}
             }
-
 {{nullAssignments}}
 
-            RemoveFromHashTable(hashCode);
-            _count--;
+            this.RemoveFromHashTable(hashCode);
+            this._count--;
             return true;
         }
 
@@ -394,45 +561,220 @@ using UnityEngine;
 """;
         }
 
+        /// <summary>
+        /// データ取得メソッドのコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>データ取得メソッドのコード</returns>
         static string GenerateGetMethods(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
         {
-            var outParams = structTypes.Select(type => $"out {type.ToDisplayString()} {ToCamelCase(type.Name)}")
+            string[] outParams = structTypes.Select(type => $"out {type.ToDisplayString()} {ToCamelCase(type.Name)}")
                 .Concat(classTypes.Select(type => $"out {type.ToDisplayString()} {ToCamelCase(type.Name)}"))
-                .Concat(new[] { "out int index" })
                 .ToArray();
 
-            var paramNames = outParams.Select(p => p.Split(' ')[1]).ToArray();
+            string[] outParamsWithIndex = outParams.Concat(new[] { "out int index" }).ToArray();
+            string[] paramNames = outParams.Select(p => p.Split(' ')[1]).ToArray();
+            string[] paramNamesWithIndex = paramNames.Concat(new[] { "index" }).ToArray();
+            string[] getValueParams = structTypes.Select(type => $"out {ToCamelCase(type.Name)}")
+                .Concat(classTypes.Select(type => $"out {ToCamelCase(type.Name)}"))
+                .ToArray();
 
-            var defaultAssignments = string.Join("\n",
+            string defaultAssignments = string.Join("\n",
                 structTypes.Select(type => $"                {ToCamelCase(type.Name)} = default;")
                 .Concat(classTypes.Select(type => $"                {ToCamelCase(type.Name)} = null;")));
 
-            var valueAssignments = string.Join("\n",
-                structTypes.Select(type => $"                {ToCamelCase(type.Name)} = _{ToCamelCase(type.Name)}[dataIndex];")
-                .Concat(classTypes.Select(type => $"                {ToCamelCase(type.Name)} = _{ToCamelCase(type.Name)}s[dataIndex];")));
+            string valueAssignments = string.Join("\n",
+                structTypes.Select(type => $"                {ToCamelCase(type.Name)} = this._{ToCamelCase(type.Name)}[dataIndex];")
+                .Concat(classTypes.Select(type => $"                {ToCamelCase(type.Name)} = this._{ToCamelCase(type.Name)}s[dataIndex];")));
 
-            var failureAssignments = string.Join("\n",
+            string failureAssignments = string.Join("\n",
                 structTypes.Select(type => $"            {ToCamelCase(type.Name)} = default;")
                 .Concat(classTypes.Select(type => $"            {ToCamelCase(type.Name)} = null;")));
 
-            var individualGetMethods = string.Join("\n\n", structTypes.Select(type => $$"""
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public ref {{{type.ToDisplayString()}}} Get{{{type.Name}}}ByIndex(int index)
-        {
-            if (index < 0 || index >= _count)
-                throw new ArgumentOutOfRangeException(nameof(index));
-            return ref _{{{ToCamelCase(type.Name)}}}.ElementAt(index);
-        }
-        """));
+            string individualGetMethodsStruct = string.Join("\n", structTypes.Select(type =>
+                $"\n        #region 構造体：{type.Name}のデータ取得\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// インデックスから{type.Name}データを直接取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"index\">データのインデックス</param>\n" +
+                $"        /// <returns>{type.Name}データの参照</returns>\n" +
+                $"        /// <exception cref=\"ArgumentOutOfRangeException\">インデックスが範囲外の場合</exception>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public ref {type.ToDisplayString()} Get{type.Name}ByIndex(int index)\n" +
+                $"        {{\n" +
+                $"            if (index < 0 || index >= this._count)\n" +
+                $"                throw new ArgumentOutOfRangeException(nameof(index));\n" +
+                $"            return ref this._{ToCamelCase(type.Name)}.ElementAt(index);\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// インデックスから{type.Name}データを安全に取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"index\">データのインデックス</param>\n" +
+                $"        /// <param name=\"value\">{type.Name}データ</param>\n" +
+                $"        /// <returns>取得に成功した場合true</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public bool TryGet{type.Name}ByIndex(int index, out {type.ToDisplayString()} value)\n" +
+                $"        {{\n" +
+                $"            if (index < 0 || index >= this._count)\n" +
+                $"            {{\n" +
+                $"                value = default;\n" +
+                $"                return false;\n" +
+                $"            }}\n" +
+                $"            value = this._{ToCamelCase(type.Name)}[index];\n" +
+                $"            return true;\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// GameObjectから{type.Name}データを取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"obj\">キーとなるGameObject</param>\n" +
+                $"        /// <param name=\"value\">{type.Name}データ</param>\n" +
+                $"        /// <returns>取得に成功した場合true</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public bool TryGet{type.Name}ByGameObject(GameObject obj, out {type.ToDisplayString()} value)\n" +
+                $"        {{\n" +
+                $"            if (obj == null)\n" +
+                $"            {{\n" +
+                $"                value = default;\n" +
+                $"                return false;\n" +
+                $"            }}\n" +
+                $"            return this.TryGet{type.Name}ByHash(obj.GetHashCode(), out value);\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// ハッシュコードから{type.Name}データを取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"hashCode\">ハッシュコード</param>\n" +
+                $"        /// <param name=\"value\">{type.Name}データ</param>\n" +
+                $"        /// <returns>取得に成功した場合true</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public bool TryGet{type.Name}ByHash(int hashCode, out {type.ToDisplayString()} value)\n" +
+                $"        {{\n" +
+                $"            if (this.TryGetIndexByHash(hashCode, out int dataIndex))\n" +
+                $"            {{\n" +
+                $"                value = this._{ToCamelCase(type.Name)}[dataIndex];\n" +
+                $"                return true;\n" +
+                $"            }}\n" +
+                $"            value = default;\n" +
+                $"            return false;\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// {type.Name}データの読み取り専用ビューを取得します（JobSystem用）\n" +
+                $"        /// </summary>\n" +
+                $"        /// <returns>{type.Name}データのUnsafeList<T>.ReadOnly()</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public UnsafeList<{type.ToDisplayString()}>.ReadOnly Get{type.Name}NativeArray()\n" +
+                $"        {{\n" +
+                $"            return this._{ToCamelCase(type.Name)}.AsReadOnly();\n" +
+                $"        }}\n\n" +
+                $"        #endregion\n"));
+
+            string individualGetMethodsClass = string.Join("\n", classTypes.Select(type =>
+                $"\n        #region クラス：{type.Name}のデータ取得\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// インデックスから{type.Name}データを直接取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"index\">データのインデックス</param>\n" +
+                $"        /// <returns>{type.Name}データ</returns>\n" +
+                $"        /// <exception cref=\"ArgumentOutOfRangeException\">インデックスが範囲外の場合</exception>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public {type.ToDisplayString()} Get{type.Name}ByIndex(int index)\n" +
+                $"        {{\n" +
+                $"            if (index < 0 || index >= this._count)\n" +
+                $"                throw new ArgumentOutOfRangeException(nameof(index));\n" +
+                $"            return this._{ToCamelCase(type.Name)}s[index];\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// インデックスから{type.Name}データを安全に取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"index\">データのインデックス</param>\n" +
+                $"        /// <param name=\"value\">{type.Name}データ</param>\n" +
+                $"        /// <returns>取得に成功した場合true</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public bool TryGet{type.Name}ByIndex(int index, out {type.ToDisplayString()} value)\n" +
+                $"        {{\n" +
+                $"            if (index < 0 || index >= this._count)\n" +
+                $"            {{\n" +
+                $"                value = null;\n" +
+                $"                return false;\n" +
+                $"            }}\n" +
+                $"            value = this._{ToCamelCase(type.Name)}s[index];\n" +
+                $"            return true;\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// GameObjectから{type.Name}データを取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"obj\">キーとなるGameObject</param>\n" +
+                $"        /// <param name=\"value\">{type.Name}データ</param>\n" +
+                $"        /// <returns>取得に成功した場合true</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public bool TryGet{type.Name}ByGameObject(GameObject obj, out {type.ToDisplayString()} value)\n" +
+                $"        {{\n" +
+                $"            if (obj == null)\n" +
+                $"            {{\n" +
+                $"                value = null;\n" +
+                $"                return false;\n" +
+                $"            }}\n" +
+                $"            return this.TryGet{type.Name}ByHash(obj.GetHashCode(), out value);\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// ハッシュコードから{type.Name}データを取得します\n" +
+                $"        /// </summary>\n" +
+                $"        /// <param name=\"hashCode\">ハッシュコード</param>\n" +
+                $"        /// <param name=\"value\">{type.Name}データ</param>\n" +
+                $"        /// <returns>取得に成功した場合true</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public bool TryGet{type.Name}ByHash(int hashCode, out {type.ToDisplayString()} value)\n" +
+                $"        {{\n" +
+                $"            if (this.TryGetIndexByHash(hashCode, out int dataIndex))\n" +
+                $"            {{\n" +
+                $"                value = this._{ToCamelCase(type.Name)}s[dataIndex];\n" +
+                $"                return true;\n" +
+                $"            }}\n" +
+                $"            value = null;\n" +
+                $"            return false;\n" +
+                $"        }}\n\n" +
+                $"        /// <summary>\n" +
+                $"        /// {type.Name}データのSpanを取得します（配列ベース）\n" +
+                $"        /// </summary>\n" +
+                $"        /// <returns>{type.Name}データのSpan</returns>\n" +
+                $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                $"        public Span<{type.ToDisplayString()}> Get{type.Name}sSpan()\n" +
+                $"        {{\n" +
+                $"            return this._{ToCamelCase(type.Name)}s.AsSpan().Slice(0, this._count);\n" +
+                $"        }}\n\n" +
+                $"        #endregion\n"));
+
+            // まとめたビュー取得メソッドの生成
+            string batchViewMethods = "";
+            if ( structTypes.Length > 0 || classTypes.Length > 0 )
+            {
+                string structReadOnlyViewMethod = structTypes.Length > 0 ?
+                    $"\n        #region まとめたビュー取得メソッド\n\n" +
+                    $"        /// <summary>\n" +
+                    $"        /// すべてのstruct型データの読み取り専用ビューをタプルで取得します（JobSystem用）\n" +
+                    $"        /// </summary>\n" +
+                    $"        /// <returns>すべてのstruct型データのデータのUnsafeList<T>.ReadOnly()のタプル</returns>\n" +
+                    $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
+                    $"        public ({string.Join(", ", structTypes.Select(type => $"UnsafeList<{type.ToDisplayString()}>.ReadOnly {ToCamelCase(type.Name)}Reader"))}) GetAllStructReadOnly()\n" +
+                    $"        {{\n" +
+                    $"            return ({string.Join(", ", structTypes.Select(type => $"this._{ToCamelCase(type.Name)}.AsReadOnly()"))});\n" +
+                    $"        }}\n\n" +
+                    $"        #endregion\n" : "";
+
+                batchViewMethods = structReadOnlyViewMethod;
+            }
 
             return $$"""
+
         #region データ取得
 
         /// <summary>
-        /// GameObjectからデータを取得
+        /// GameObjectからすべてのデータを取得します
         /// </summary>
+        /// <param name="obj">キーとなるGameObject</param>
+        /// <returns>取得に成功した場合true</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool TryGetValue(GameObject obj{{(outParams.Length > 0 ? ", " : "")}}{{string.Join(", ", outParams)}})
+        public bool TryGetValue(GameObject obj{{(outParamsWithIndex.Length > 0 ? ", " : "")}}{{string.Join(", ", outParamsWithIndex)}})
         {
             if (obj == null)
             {
@@ -440,156 +782,60 @@ using UnityEngine;
                 index = -1;
                 return false;
             }
-            return TryGetValueByHash(obj.GetHashCode(), {{string.Join(", ", paramNames)}});
+            return this.TryGetValueByHash(obj.GetHashCode(), {{string.Join(", ", getValueParams)}},out index);
         }
 
         /// <summary>
-        /// ハッシュコードからデータを取得
+        /// ハッシュコードからすべてのデータを取得します
         /// </summary>
-        public bool TryGetValueByHash(int hashCode{{(outParams.Length > 0 ? ", " : "")}}{{string.Join(", ", outParams)}})
+        /// <param name="hashCode">ハッシュコード</param>
+        /// <returns>取得に成功した場合true</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool TryGetValueByHash(int hashCode{{(outParamsWithIndex.Length > 0 ? ", " : "")}}{{string.Join(", ", outParamsWithIndex)}})
         {
-            if (TryGetIndexByHash(hashCode, out int dataIndex))
+            if (this.TryGetIndexByHash(hashCode, out int dataIndex))
             {
 {{valueAssignments}}
                 index = dataIndex;
                 return true;
             }
-
 {{failureAssignments}}
             index = -1;
             return false;
         }
 
         /// <summary>
-        /// インデックスからデータを取得
+        /// インデックスからすべてのデータを取得します
         /// </summary>
+        /// <param name="index">データのインデックス</param>
+        /// <returns>取得に成功した場合true</returns>
         public bool TryGetByIndex(int index{{(outParams.Length > 0 ? ", " : "")}}{{string.Join(", ", outParams)}})
         {
-            if (index < 0 || index >= _count)
+            if (index < 0 || index >= this._count)
             {
 {{failureAssignments}}
                 return false;
             }
-
 {{valueAssignments.Replace("dataIndex", "index")}}
             return true;
         }
 
-{{individualGetMethods}}
-
-        #endregion
-
-""";
-        }
-
-        static string GenerateUtilityMethods(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
-        {
-            var lengthResets = string.Join("\n", structTypes.Select(type =>
-                $"            _{ToCamelCase(type.Name)}.Length = 0;"));
-
-            var arrayClears = string.Join("\n", classTypes.Select(type =>
-                $"            Array.Clear(_{ToCamelCase(type.Name)}s, 0, _count);"));
-
-            return $$"""
-        #region ユーティリティ（生成）
-
         /// <summary>
-        /// データクリア処理
+        /// ハッシュ値から値のインデックスを取得します
         /// </summary>
-        partial void ClearAllData()
-        {
-            // バケットをリセット
-            _buckets.AsSpan().Fill(-1);
-
-            // エントリとマッピングをクリア
-            _entries.Clear();
-
-            // データをクリア
-{{lengthResets}}
-{{arrayClears}}
-
-            _count = 0;
-        }
-
-        /// <summary>
-        /// 指定したキーが存在するか確認
-        /// </summary>
+        /// <param name="hashCode">ハッシュコード</param>
+        /// <param name="index">取得されたインデックス</param>
+        /// <returns>取得に成功した場合true</returns>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ContainsKey(GameObject obj)
-        {
-            if ( obj == null )
-            {
-                return false;
-            }
-
-            return ContainsKeyByHash(obj.GetHashCode());
-        }
-
-        /// <summary>
-        /// 指定したハッシュコードが存在するか確認
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ContainsKeyByHash(int hashCode)
-        {
-            return TryGetIndexByHash(hashCode, out int _);
-        }
-
-        #endregion
-
-""";
-        }
-
-        static string GenerateInternalMethods(INamedTypeSymbol[] structTypes)
-        {
-            var layoutCalculations = string.Join("\n\n", structTypes.Select(type => $$"""
-            layout.{{{type.Name}}}Offset = currentOffset;
-            currentOffset += capacity * sizeof({{{type.ToDisplayString()}}});
-            currentOffset = AlignTo(currentOffset, 64);
-            """));
-
-            return $$"""
-        #region 内部メソッド
-
-        private const int DEFAULT_MAX_CAPACITY = 130;
-        private const int BUCKET_COUNT = 191;  // 素数を使用
-        
-        private MemoryLayout CalculateMemoryLayout(int capacity)
-        {
-            MemoryLayout layout = new();
-            int currentOffset = 0;
-
-{{layoutCalculations}}
-
-            layout.TotalSize = currentOffset;
-            return layout;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static int AlignTo(int memoryOffset, int alignment)
-        {
-            return (memoryOffset + alignment - 1) & ~(alignment - 1);
-        }
-
-        /// <summary>
-        /// バケットインデックスの計算
-        /// </summary>
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int GetBucketIndex(int hashCode)
-        {
-            return (hashCode & 0x7FFFFFFF) % BUCKET_COUNT;
-        }
-
-        /// <summary>
-        /// ハッシュ値から値のインデックスを取得する
-        /// </summary>
+        [Unity.Burst.BurstCompile]
         public bool TryGetIndexByHash(int hashCode, out int index)
         {
-            int bucketIndex = GetBucketIndex(hashCode);
-            int entryIndex = _buckets[bucketIndex];
+            int bucketIndex = this.GetBucketIndex(hashCode);
+            int entryIndex = this._buckets[bucketIndex];
 
             while ( entryIndex != -1 )
             {
-                ref Entry entry = ref _entries.ElementAt(entryIndex);
+                ref Entry entry = ref this._entries.ElementAt(entryIndex);
 
                 if ( entry.HashCode == hashCode )
                 {
@@ -604,43 +850,196 @@ using UnityEngine;
             return false;
         }
 
+        #endregion
+{{individualGetMethodsStruct}}{{individualGetMethodsClass}}{{batchViewMethods}}
+""";
+        }
+
         /// <summary>
-        /// ハッシュテーブルにエントリを登録
+        /// ユーティリティメソッドのコードを生成します
         /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>ユーティリティメソッドのコード</returns>
+        static string GenerateUtilityMethods(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
+        {
+            string lengthResets = string.Join("\n", structTypes.Select(type =>
+                $"            this._{ToCamelCase(type.Name)}.Length = 0;"));
+
+            string arrayClears = string.Join("\n", classTypes.Select(type =>
+                $"            Array.Clear(this._{ToCamelCase(type.Name)}s, 0, this._count);"));
+
+            return $$"""
+
+        #region ユーティリティ（生成）
+
+        /// <summary>
+        /// すべてのデータをクリアします
+        /// </summary>
+        public void Clear()
+        {
+            // バケットをリセット
+            this._buckets.AsSpan().Fill(-1);
+
+            // エントリとマッピングをクリア
+            this._entries.Clear();
+
+            // データをクリア
+{{lengthResets}}
+{{arrayClears}}
+
+            this._count = 0;
+        }
+
+        /// <summary>
+        /// 指定したGameObjectが存在するか確認します
+        /// </summary>
+        /// <param name="obj">確認するGameObject</param>
+        /// <returns>存在する場合true</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ContainsKey(GameObject obj)
+        {
+            if ( obj == null )
+            {
+                return false;
+            }
+
+            return this.ContainsKeyByHash(obj.GetHashCode());
+        }
+
+        /// <summary>
+        /// 指定したハッシュコードが存在するか確認します
+        /// </summary>
+        /// <param name="hashCode">確認するハッシュコード</param>
+        /// <returns>存在する場合true</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool ContainsKeyByHash(int hashCode)
+        {
+            return this.TryGetIndexByHash(hashCode, out int _);
+        }
+
+        #endregion
+
+""";
+        }
+
+        /// <summary>
+        /// 内部メソッドのコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <returns>内部メソッドのコード</returns>
+        static string GenerateInternalMethods(INamedTypeSymbol[] structTypes)
+        {
+            string layoutCalculations = string.Join("\n", structTypes.Select(type =>
+                $"            layout.{type.Name}Offset = currentOffset;\n" +
+                $"            currentOffset += capacity * sizeof({type.ToDisplayString()});\n" +
+                $"            currentOffset = AlignTo(currentOffset, 64);"));
+
+            return $$"""
+
+        #region 内部メソッド
+
+        /// <summary>
+        /// メモリレイアウトを計算します
+        /// </summary>
+        /// <param name="capacity">容量</param>
+        /// <returns>メモリレイアウト情報</returns>
+        private MemoryLayout CalculateMemoryLayout(int capacity)
+        {
+            MemoryLayout layout = new();
+            int currentOffset = 0;
+{{layoutCalculations}}
+
+            layout.TotalSize = currentOffset;
+            return layout;
+        }
+
+        /// <summary>
+        /// メモリオフセットをアライメントに合わせて調整します
+        /// </summary>
+        /// <param name="memoryOffset">メモリオフセット</param>
+        /// <param name="alignment">アライメント</param>
+        /// <returns>調整されたオフセット</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private static int AlignTo(int memoryOffset, int alignment)
+        {
+            return (memoryOffset + alignment - 1) & ~(alignment - 1);
+        }
+
+        /// <summary>
+        /// バケットのサイズを計算する処理。
+        /// サイズは一万まで対応。
+        /// </summary>
+        /// <param name="setCapacity"></param>
+        /// <returns></returns>
+        int MakePrimeSizeBucket(int setCapacity)
+        {
+
+            // 一万までの素数
+            Span<int> prime = new int[] { 2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53, 59, 61, 67, 71, 73, 79, 83, 89, 97, 101, 103, 107, 109, 113, 127, 131, 137, 139, 149, 151, 157, 163, 167, 173, 179, 181, 191, 193, 197, 199, 211, 223, 227, 229, 233, 239, 241, 251, 257, 263, 269, 271, 277, 281, 283, 293, 307, 311, 313, 317, 331, 337, 347, 349, 353, 359, 367, 373, 379, 383, 389, 397, 401, 409, 419, 421, 431, 433, 439, 443, 449, 457, 461, 463, 467, 479, 487, 491, 499, 503, 509, 521, 523, 541, 547, 557, 563, 569, 571, 577, 587, 593, 599, 601, 607, 613, 617, 619, 631, 641, 643, 647, 653, 659, 661, 673, 677, 683, 691, 701, 709, 719, 727, 733, 739, 743, 751, 757, 761, 769, 773, 787, 797, 809, 811, 821, 823, 827, 829, 839, 853, 857, 859, 863, 877, 881, 883, 887, 907, 911, 919, 929, 937, 941, 947, 953, 967, 971, 977, 983, 991, 997, 1009, 1013, 1019, 1021, 1031, 1033, 1039, 1049, 1051, 1061, 1063, 1069, 1087, 1091, 1093, 1097, 1103, 1109, 1117, 1123, 1129, 1151, 1153, 1163, 1171, 1181, 1187, 1193, 1201, 1213, 1217, 1223, 1229, 1231, 1237, 1249, 1259, 1277, 1279, 1283, 1289, 1291, 1297, 1301, 1303, 1307, 1319, 1321, 1327, 1361, 1367, 1373, 1381, 1399, 1409, 1423, 1427, 1429, 1433, 1439, 1447, 1451, 1453, 1459, 1471, 1481, 1483, 1487, 1489, 1493, 1499, 1511, 1523, 1531, 1543, 1549, 1553, 1559, 1567, 1571, 1579, 1583, 1597, 1601, 1607, 1609, 1613, 1619, 1621, 1627, 1637, 1657, 1663, 1667, 1669, 1693, 1697, 1699, 1709, 1721, 1723, 1733, 1741, 1747, 1753, 1759, 1777, 1783, 1787, 1789, 1801, 1811, 1823, 1831, 1847, 1861, 1867, 1871, 1873, 1877, 1879, 1889, 1901, 1907, 1913, 1931, 1933, 1949, 1957, 1973, 1979, 1987, 1993, 1997, 1999, 2003, 2011, 2017, 2027, 2029, 2039, 2053, 2063, 2069, 2081, 2083, 2087, 2089, 2099, 2111, 2113, 2129, 2131, 2137, 2141, 2143, 2153, 2161, 2179, 2203, 2207, 2213, 2221, 2237, 2239, 2243, 2251, 2267, 2269, 2273, 2281, 2287, 2293, 2297, 2309, 2311, 2333, 2339, 2341, 2347, 2351, 2357, 2371, 2377, 2381, 2383, 2389, 2393, 2399, 2411, 2417, 2423, 2437, 2441, 2447, 2459, 2467, 2473, 2477, 2503, 2521, 2531, 2539, 2543, 2549, 2551, 2557, 2579, 2591, 2593, 2609, 2617, 2621, 2633, 2647, 2657, 2659, 2663, 2671, 2677, 2683, 2687, 2689, 2693, 2699, 2707, 2711, 2713, 2719, 2729, 2731, 2741, 2749, 2753, 2767, 2777, 2789, 2791, 2797, 2801, 2803, 2819, 2833, 2837, 2843, 2851, 2857, 2861, 2879, 2887, 2897, 2903, 2909, 2917, 2927, 2939, 2953, 2957, 2963, 2969, 2971, 2999, 3001, 3011, 3019, 3023, 3037, 3041, 3049, 3061, 3079, 3083, 3089, 3109, 3119, 3121, 3137, 3163, 3167, 3169, 3181, 3187, 3191, 3203, 3209, 3217, 3221, 3229, 3251, 3253, 3257, 3259, 3271, 3299, 3301, 3307, 3313, 3319, 3323, 3329, 3331, 3343, 3347, 3359, 3361, 3371, 3373, 3389, 3391, 3407, 3413, 3433, 3449, 3457, 3461, 3463, 3467, 3469, 3491, 3499, 3511, 3517, 3527, 3529, 3533, 3539, 3541, 3547, 3557, 3559, 3571, 3581, 3583, 3593, 3607, 3613, 3617, 3623, 3631, 3637, 3643, 3659, 3671, 3673, 3677, 3691, 3697, 3701, 3709, 3719, 3727, 3733, 3739, 3761, 3767, 3769, 3779, 3793, 3797, 3803, 3821, 3823, 3833, 3847, 3851, 3853, 3863, 3877, 3881, 3889, 3907, 3911, 3917, 3919, 3923, 3929, 3931, 3943, 3947, 3967, 3989, 4001, 4003, 4007, 4013, 4019, 4021, 4027, 4049, 4051, 4057, 4073, 4079, 4091, 4093, 4099, 4111, 4127, 4129, 4133, 4139, 4153, 4157, 4159, 4177, 4201, 4211, 4217, 4219, 4229, 4231, 4241, 4243, 4253, 4259, 4261, 4271, 4273, 4283, 4289, 4297, 4327, 4337, 4339, 4349, 4357, 4363, 4373, 4391, 4397, 4409, 4421, 4423, 4441, 4447, 4451, 4457, 4463, 4481, 4483, 4493, 4507, 4513, 4517, 4519, 4523, 4547, 4549, 4561, 4567, 4583, 4591, 4597, 4603, 4621, 4637, 4639, 4643, 4649, 4651, 4657, 4663, 4673, 4679, 4691, 4703, 4721, 4723, 4729, 4733, 4751, 4759, 4783, 4787, 4789, 4793, 4799, 4801, 4813, 4817, 4831, 4861, 4871, 4877, 4889, 4903, 4909, 4919, 4931, 4933, 4937, 4943, 4951, 4957, 4967, 4969, 4973, 4987, 4993, 4999, 5003, 5009, 5011, 5021, 5023, 5039, 5051, 5059, 5077, 5081, 5087, 5099, 5101, 5107, 5113, 5119, 5147, 5153, 5167, 5171, 5179, 5189, 5197, 5209, 5227, 5231, 5233, 5237, 5261, 5273, 5279, 5281, 5297, 5303, 5309, 5323, 5333, 5347, 5351, 5381, 5387, 5393, 5399, 5407, 5413, 5417, 5431, 5437, 5441, 5443, 5449, 5471, 5477, 5479, 5483, 5501, 5503, 5507, 5519, 5521, 5527, 5531, 5557, 5563, 5569, 5573, 5581, 5591, 5623, 5639, 5641, 5647, 5651, 5653, 5657, 5659, 5669, 5683, 5689, 5693, 5701, 5711, 5717, 5737, 5741, 5743, 5749, 5779, 5783, 5791, 5801, 5807, 5813, 5821, 5827, 5839, 5843, 5849, 5851, 5857, 5861, 5867, 5869, 5879, 5881, 5897, 5903, 5923, 5927, 5939, 5953, 5981, 5987, 6007, 6011, 6029, 6037, 6043, 6047, 6053, 6067, 6073, 6079, 6089, 6091, 6101, 6113, 6121, 6131, 6133, 6143, 6151, 6163, 6173, 6197, 6199, 6203, 6211, 6217, 6221, 6229, 6247, 6257, 6263, 6269, 6271, 6277, 6287, 6299, 6301, 6311, 6317, 6323, 6329, 6337, 6343, 6353, 6359, 6361, 6367, 6373, 6379, 6389, 6397, 6421, 6427, 6449, 6451, 6469, 6473, 6481, 6491, 6521, 6529, 6547, 6551, 6553, 6563, 6569, 6571, 6577, 6581, 6599, 6607, 6619, 6637, 6653, 6659, 6661, 6673, 6679, 6689, 6691, 6701, 6703, 6709, 6719, 6733, 6737, 6761, 6763, 6779, 6781, 6791, 6793, 6803, 6823, 6827, 6829, 6833, 6841, 6857, 6863, 6869, 6871, 6883, 6899, 6907, 6911, 6917, 6943, 6947, 6949, 6959, 6961, 6967, 6971, 6977, 6983, 6991, 6997, 7001, 7013, 7019, 7027, 7039, 7043, 7057, 7069, 7079, 7103, 7109, 7121, 7127, 7129, 7151, 7159, 7177, 7187, 7193, 7207, 7211, 7213, 7219, 7229, 7237, 7243, 7247, 7253, 7283, 7297, 7307, 7309, 7321, 7331, 7333, 7349, 7351, 7369, 7393, 7411, 7417, 7433, 7451, 7457, 7469, 7477, 7481, 7487, 7489, 7499, 7507, 7517, 7523, 7529, 7537, 7541, 7547, 7549, 7559, 7561, 7573, 7577, 7583, 7589, 7591, 7603, 7607, 7621, 7639, 7643, 7649, 7669, 7673, 7681, 7687, 7691, 7699, 7703, 7717, 7723, 7727, 7741, 7753, 7757, 7759, 7789, 7793, 7817, 7823, 7829, 7841, 7853, 7867, 7873, 7877, 7879, 7883, 7901, 7907, 7919, 7927, 7933, 7937, 7943, 7951, 7963, 7993, 8009, 8011, 8017, 8039, 8053, 8059, 8069, 8081, 8087, 8089, 8093, 8101, 8111, 8117, 8123, 8147, 8161, 8167, 8171, 8179, 8191, 8209, 8219, 8221, 8231, 8233, 8237, 8243, 8263, 8269, 8273, 8287, 8291, 8293, 8297, 8311, 8317, 8329, 8353, 8363, 8369, 8377, 8387, 8389, 8419, 8423, 8429, 8431, 8443, 8447, 8461, 8467, 8501, 8513, 8521, 8527, 8537, 8539, 8543, 8563, 8573, 8581, 8597, 8599, 8609, 8623, 8627, 8629, 8641, 8647, 8663, 8669, 8677, 8681, 8687, 8693, 8699, 8707, 8713, 8719, 8731, 8737, 8741, 8747, 8753, 8761, 8779, 8783, 8787, 8791, 8803, 8807, 8819, 8821, 8831, 8837, 8839, 8849, 8861, 8863, 8867, 8887, 8893, 8923, 8927, 8933, 8941, 8951, 8963, 8969, 8971, 8999, 9001, 9007, 9011, 9013, 9029, 9041, 9043, 9049, 9059, 9067, 9091, 9103, 9109, 9127, 9133, 9137, 9151, 9157, 9161, 9173, 9181, 9187, 9199, 9203, 9209, 9221, 9227, 9239, 9241, 9257, 9277, 9281, 9283, 9293, 9311, 9319, 9323, 9337, 9341, 9343, 9349, 9371, 9377, 9391, 9397, 9403, 9413, 9419, 9421, 9431, 9433, 9437, 9439, 9461, 9467, 9473, 9479, 9491, 9497, 9511, 9521, 9533, 9539, 9547, 9551, 9587, 9601, 9613, 9619, 9623, 9629, 9631, 9643, 9649, 9661, 9677, 9679, 9689, 9697, 9719, 9721, 9733, 9739, 9743, 9749, 9767, 9769, 9781, 9787, 9791, 9803, 9811, 9817, 9829, 9833, 9839, 9851, 9857, 9859, 9871, 9883, 9887, 9901, 9907, 9923, 9929, 9931, 9941, 9949, 9967, 9973, 10007, 10009, 10037, 10039, 10061, 10067, 10069, 10079, 10091, 10093, 10099, 10103, 10111, 10139, 10141, 10151, 10153, 10159, 10163, 10169, 10177, 10181, 10193, 10211, 10223, 10243, 10259, 10267, 10271, 10273, 10289, 10301, 10303, 10313, 10321, 10331, 10333, 10337, 10343, 10357, 10369, 10391, 10399, 10427, 10429, 10433, 10453, 10457, 10459, 10463, 104729, 10487, 10493, 10501, 10507, 10513, 10529, 10531, 10559, 10567, 10589, 10597, 10601, 10607, 10613, 10627, 10631, 10639, 10651, 10657, 10663, 10691, 10693, 10709, 10711, 10729, 10733, 10739, 10753, 10771, 10781, 10789, 10831, 10837, 10843, 10847, 10853, 10861, 10867, 10883, 10889, 10891, 10903, 10909, 10939, 10949, 10957, 10971, 10973, 10979, 10987, 10993, 11003, 11027, 11041, 11047, 11057, 11059, 11069, 11071, 11083, 11087, 11093, 11113, 11117, 11119, 11131, 11143, 11153, 11161, 11171, 11173, 11177, 11197, 11213, 11239, 11243, 11251, 11257, 11261, 11273, 11279, 11287, 11299, 11311, 11321, 11329, 11351, 11353, 11362, 11369, 11383, 11393, 11399, 11411, 11423, 11429, 11431, 11437, 11441, 11443, 11447, 11467, 11471, 11483, 11489, 11491, 11497, 11503, 11519, 11527, 11549, 11551, 11579, 11587, 11593, 11597, 11617, 11621, 11633, 11657, 11677, 11681, 11689, 11699, 11701, 11717, 11719, 11731, 11743, 11777, 11779, 11783, 11789, 11801, 11807, 11813, 11821, 11827, 11831, 11833, 11837, 11839, 11863, 11867, 11881, 11897, 11903, 11909, 11927, 11929, 11933, 11953, 11959, 11969, 11971, 11981, 11987, 12007, 12011, 12037, 12041, 12043, 12049, 12071, 12073, 12097, 12101, 12107, 12109, 12113, 12119, 12127, 12131, 12143, 12149, 12157, 12161, 12197, 12203, 12211, 12227, 12239, 12241, 12251, 12257, 12263, 12269, 12277, 12281, 12289, 12293, 12301, 12323, 12329, 12343, 12373, 12377, 12379, 12391, 12401, 12409, 12413, 12421, 12433, 12437, 12451, 12457, 12473, 12479, 12487, 12491, 12497, 12503, 12511, 12517, 12527, 12539, 12541, 12547, 12553, 12569, 12577, 12583, 12589, 12601, 12611, 12613, 12619, 12637, 12641, 12647, 12653, 12659, 12671, 12673, 12689, 12697, 12703, 12713, 12721, 12739, 12743, 12757, 12763, 12781, 12791, 12799, 12809, 12821, 12823, 12829, 12833, 12841, 12853, 12871, 12877, 12889, 12899, 12907, 12917, 12919, 12923, 12941, 12953, 12959, 12967, 12973, 12979, 12983, 13001, 13003, 13007, 13009, 13031, 13033, 13037, 13043, 13049, 13063, 13093, 13099, 13103, 13109, 13121, 13127, 13147, 13151, 13153, 13159, 13163, 13171, 13177, 13181, 13187, 13217, 13219, 13229, 13241, 13249, 13259, 13267, 13291, 13297, 13309, 13313, 13327, 13331, 13337, 13339, 13367, 13381, 13397, 13411, 13417, 13421, 13441, 13451, 13457, 13463, 13469, 13477, 13487, 13499, 13513, 13521, 13523, 13537, 13553, 13567, 13577, 13591, 13597, 13613, 13619, 13627, 13637, 13649, 13669, 13679, 13681, 13687, 13693, 13697, 13703, 13711, 13721, 13723, 13729, 13751, 13757, 13759, 13763, 13781, 13787, 13799, 13807, 13829, 13831, 13841, 13859, 13873, 13877, 13879, 13883, 13901, 13903, 13907, 13913, 13921, 13931, 13933, 13937, 13943, 13963, 13967, 13997, 13999, 14009, 14011, 14029, 14033, 14051, 14057, 14071, 14081, 14083, 14087, 14089, 14093, 14107, 14143, 14149, 14153, 14159, 14161, 14167, 14173, 14197, 14207, 14221, 14243, 14249, 14251, 14281, 14287, 14293, 14303, 14321, 14323, 14327, 14341, 14347, 14363, 14371, 14387, 14389, 14401, 14407, 14411, 14419, 14423, 14431, 14437, 14441, 14447, 14471, 14479, 14489, 14503, 14519, 14533, 14537, 14543, 14549, 14551, 14557, 14561, 14563, 14591, 14593, 14603, 14611, 14621, 14627, 14629, 14633, 14639, 14653, 14657, 14669, 14683, 14699, 14713, 14717, 14723, 14731, 14737, 14741, 14747, 14759, 14767, 14771, 14783, 14797, 14813, 14821, 14827, 14831, 14843, 14851, 14861, 14867, 14869, 14879, 14887, 14891, 14897, 14903, 14917, 14923, 14929, 14939, 14947, 14951, 14957, 14969, 14971, 14983, 14987, 14993, 14999, 15007, 15013, 15017, 15031, 15053, 15073, 15077, 15083, 15091, 15101, 15107, 15121, 15127, 15131, 15137, 15139, 15149, 15161, 15173, 15187, 15193, 15199, 15217, 15227, 15233, 15241, 15259, 15263, 15269, 15271, 15277, 15287, 15289, 15299, 15307, 15313, 15319, 15329, 15331, 15349, 15359, 15361, 15373, 15377, 15383, 15391, 15401, 15403, 15407, 15409, 15413, 15427, 15439, 15443, 15451, 15461, 15467, 15473, 15497, 15499 };
+
+            int requireSize = (int)(setCapacity * 1.5);
+
+            int pIndex = prime.BinarySearch(requireSize);
+            pIndex = pIndex < 0 ? ~pIndex : pIndex;
+
+            // 必要以上を満たす素数のサイズを作成。
+            return prime[pIndex];
+        }
+
+        /// <summary>
+        /// バケットインデックスを計算します
+        /// </summary>
+        /// <param name="hashCode">ハッシュコード</param>
+        /// <returns>バケットインデックス</returns>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        private int GetBucketIndex(int hashCode)
+        {
+            return (hashCode & 0x7FFFFFFF) % this._buckets.Length;
+        }
+
+        /// <summary>
+        /// ハッシュテーブルにエントリを登録します
+        /// </summary>
+        /// <param name="hashCode">ハッシュコード</param>
+        /// <param name="dataIndex">データインデックス</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         private void RegisterToHashTable(int hashCode, int dataIndex)
         {
-            int bucketIndex = GetBucketIndex(hashCode);
+            int bucketIndex = this.GetBucketIndex(hashCode);
             Entry newEntry = new()
             {
                 HashCode = hashCode,
                 ValueIndex = dataIndex,
-                NextInBucket = _buckets[bucketIndex]
+                NextInBucket = this._buckets[bucketIndex]
             };
             int newEntryIndex;
-            if ( _freeEntry.TryPop(out newEntryIndex) )
+            if ( this._freeEntry.TryPop(out newEntryIndex) )
             {
-                _entries[newEntryIndex] = newEntry;
+                this._entries[newEntryIndex] = newEntry;
             }
             else
             {
-                newEntryIndex = _entries.Length;
-                _entries.AddNoResize(newEntry);
+                newEntryIndex = this._entries.Length;
+                this._entries.AddNoResize(newEntry);
             }
-            _buckets[bucketIndex] = newEntryIndex;
+            this._buckets[bucketIndex] = newEntryIndex;
         }
 
         /// <summary>
-        /// エントリのデータインデックスを更新
+        /// エントリのデータインデックスを更新します
         /// </summary>
+        /// <param name="hashCode">ハッシュコード</param>
+        /// <param name="newDataIndex">新しいデータインデックス</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [Unity.Burst.BurstCompile]
         private void UpdateEntryDataIndex(int hashCode, int newDataIndex)
         {
-            int bucketIndex = GetBucketIndex(hashCode);
-            int entryIndex = _buckets[bucketIndex];
+            int bucketIndex = this.GetBucketIndex(hashCode);
+            int entryIndex = this._buckets[bucketIndex];
             while ( entryIndex != -1 )
             {
-                ref Entry entry = ref _entries.ElementAt(entryIndex);
+                ref Entry entry = ref this._entries.ElementAt(entryIndex);
                 if ( entry.HashCode == hashCode )
                 {
                     entry.ValueIndex = newDataIndex;
@@ -651,29 +1050,31 @@ using UnityEngine;
         }
 
         /// <summary>
-        /// ハッシュテーブルからエントリを削除
+        /// ハッシュテーブルからエントリを削除します
         /// </summary>
+        /// <param name="hashCode">削除するハッシュコード</param>
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        [Unity.Burst.BurstCompile]
         private void RemoveFromHashTable(int hashCode)
         {
-            int bucketIndex = GetBucketIndex(hashCode);
-            int entryIndex = _buckets[bucketIndex];
+            int bucketIndex = this.GetBucketIndex(hashCode);
+            int entryIndex = this._buckets[bucketIndex];
             int prevIndex = -1;
             while ( entryIndex != -1 )
             {
-                ref Entry entry = ref _entries.ElementAt(entryIndex);
+                ref Entry entry = ref this._entries.ElementAt(entryIndex);
                 if ( entry.HashCode == hashCode )
                 {
                     if ( prevIndex == -1 )
                     {
-                        _buckets[bucketIndex] = entry.NextInBucket;
+                        this._buckets[bucketIndex] = entry.NextInBucket;
                     }
                     else
                     {
-                        ref Entry prevEntry = ref _entries.ElementAt(prevIndex);
+                        ref Entry prevEntry = ref this._entries.ElementAt(prevIndex);
                         prevEntry.NextInBucket = entry.NextInBucket;
                     }
-                    _freeEntry.Push(entryIndex);
+                    this._freeEntry.Push(entryIndex);
                     return;
                 }
                 prevIndex = entryIndex;
@@ -686,30 +1087,35 @@ using UnityEngine;
 """;
         }
 
+        /// <summary>
+        /// リソース解放メソッドのコードを生成します
+        /// </summary>
+        /// <returns>リソース解放メソッドのコード</returns>
         static string GenerateDisposeMethod()
         {
             return """
+
         #region リソース解放
 
         /// <summary>
-        /// リソース解放処理
+        /// リソースを解放します
         /// </summary>
-        partial void DisposeResources()
+        public partial void Dispose()
         {
-            if ( _isDisposed )
+            if ( this._isDisposed )
             {
                 return;
             }
 
-            if ( _bulkMemory != null )
+            if ( this._bulkMemory != null )
             {
-                UnsafeUtility.Free(_bulkMemory, _allocator);
-                _bulkMemory = null;
+                UnsafeUtility.Free(this._bulkMemory, this._allocator);
+                this._bulkMemory = null;
             }
 
-            _entries.Dispose();
+            this._entries.Dispose();
 
-            _isDisposed = true;
+            this._isDisposed = true;
         }
 
         #endregion
@@ -717,6 +1123,11 @@ using UnityEngine;
 """;
         }
 
+        /// <summary>
+        /// 文字列をキャメルケースに変換します
+        /// </summary>
+        /// <param name="input">変換する文字列</param>
+        /// <returns>キャメルケースに変換された文字列</returns>
         static string ToCamelCase(string input)
         {
             if ( string.IsNullOrEmpty(input) )
@@ -725,10 +1136,16 @@ using UnityEngine;
         }
     }
 
+    /// <summary>
+    /// 診断情報の定義クラス
+    /// </summary>
     public static class DiagnosticDescriptors
     {
         const string Category = "ContainerGenerator";
 
+        /// <summary>
+        /// 型配列が空の場合の警告
+        /// </summary>
         public static readonly DiagnosticDescriptor EmptyTypeArrays = new(
             id: "CG001",
             title: "Empty type arrays",
