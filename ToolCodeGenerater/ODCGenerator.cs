@@ -662,7 +662,7 @@ using UnityEngine;
                 $"        /// </summary>\n" +
                 $"        /// <returns>{type.Name}データのUnsafeList<T>.ReadOnly()</returns>\n" +
                 $"        [MethodImpl(MethodImplOptions.AggressiveInlining)]\n" +
-                $"        public UnsafeList<{type.ToDisplayString()}>.ReadOnly Get{type.Name}NativeArray()\n" +
+                $"        public UnsafeList<{type.ToDisplayString()}>.ReadOnly Get{type.Name}ReadOnly()\n" +
                 $"        {{\n" +
                 $"            return this._{ToCamelCase(type.Name)}.AsReadOnly();\n" +
                 $"        }}\n\n" +
