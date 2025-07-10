@@ -7,11 +7,21 @@ namespace ToolAttribute.GenContainer
 {
     /// <summary>
     /// Unity内で使用するアトリビュート
+    /// 配列で指定したデータ型を管理するデータコンテナを作成する。
     /// </summary>
     [AttributeUsage(AttributeTargets.Class)]
     public class ContainerSettingAttribute : Attribute
     {
+        /// <summary>
+        /// 管理対象のアンマネージ型。
+        /// 一括確保したメモリ領域で管理される。
+        /// </summary>
         public Type[] StructType { get; }
+
+        /// <summary>
+        /// 管理対象のマネージ型。
+        /// 配列で管理される。
+        /// </summary>
         public Type[] ClassType { get; }
 
         public ContainerSettingAttribute(Type[] structType, Type[] classType)
