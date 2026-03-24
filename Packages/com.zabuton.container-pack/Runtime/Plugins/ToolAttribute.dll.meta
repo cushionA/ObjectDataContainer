@@ -1,7 +1,5 @@
 fileFormatVersion: 2
-guid: 1193a0b0877abd7488b18d147321c2ef
-labels:
-- RoslynAnalyzer
+guid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
 PluginImporter:
   externalObjects: {}
   serializedVersion: 3
@@ -14,44 +12,44 @@ PluginImporter:
   validateReferences: 1
   platformData:
     Any:
-      enabled: 0
+      enabled: 1
       settings:
-        Exclude Editor: 1
-        Exclude Linux64: 1
-        Exclude OSXUniversal: 1
-        Exclude Win: 1
-        Exclude Win64: 1
-        Exclude WindowsStoreApps: 1
+        Exclude Editor: 0
+        Exclude Linux64: 0
+        Exclude OSXUniversal: 0
+        Exclude Win: 0
+        Exclude Win64: 0
+        Exclude WindowsStoreApps: 0
     Editor:
-      enabled: 0
+      enabled: 1
       settings:
         CPU: AnyCPU
         DefaultValueInitialized: true
         OS: AnyOS
     Linux64:
-      enabled: 0
+      enabled: 1
       settings:
-        CPU: None
+        CPU: x86_64
     OSXUniversal:
-      enabled: 0
+      enabled: 1
       settings:
-        CPU: None
+        CPU: AnyCPU
     Win:
-      enabled: 0
+      enabled: 1
       settings:
-        CPU: None
+        CPU: AnyCPU
     Win64:
-      enabled: 0
+      enabled: 1
       settings:
-        CPU: None
+        CPU: AnyCPU
     WindowsStoreApps:
       enabled: 0
       settings:
         CPU: AnyCPU
         DontProcess: false
-        PlaceholderPath: 
+        PlaceholderPath:
         SDK: AnySDK
         ScriptingBackend: AnyScriptingBackend
-  userData: 
-  assetBundleName: 
-  assetBundleVariant: 
+  userData:
+  assetBundleName:
+  assetBundleVariant:

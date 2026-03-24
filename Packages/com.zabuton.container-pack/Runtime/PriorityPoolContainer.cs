@@ -159,7 +159,7 @@ namespace ODC.Runtime
                 return false;
             }
 
-            if (priority > _elements[lowestIdx].Priority)
+            if (priority >= _elements[lowestIdx].Priority)
             {
                 evicted = _elements[lowestIdx].Data;
                 RemoveAtIndex(lowestIdx);

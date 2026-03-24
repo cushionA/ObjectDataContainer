@@ -523,7 +523,7 @@ namespace ODC.Tests
             container.Add(CreateGameObject("A1"), new TestData("ally1"), "allies");
             container.Add(CreateGameObject("E2"), new TestData("enemy2"), "enemies");
 
-            Span<TestData> results = stackalloc TestData[10];
+            Span<TestData> results = new TestData[10];
             int count = container.GetGroup("enemies", results);
 
             Assert.AreEqual(2, count);
@@ -547,7 +547,7 @@ namespace ODC.Tests
             container.Add(e1, new TestData("enemy1"), "enemies");
             container.Add(a1, new TestData("ally1"), "allies");
 
-            Span<GameObject> results = stackalloc GameObject[10];
+            Span<GameObject> results = new GameObject[10];
             int count = container.GetGroupObjects("enemies", results);
 
             Assert.AreEqual(1, count);
