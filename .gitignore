@@ -94,3 +94,9 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Source Generator / Attribute project build outputs
+ToolCodeGenerater/bin/
+ToolCodeGenerater/obj/
+ToolAttribute/bin/
+ToolAttribute/obj/

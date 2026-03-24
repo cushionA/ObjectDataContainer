@@ -933,6 +933,7 @@ using UnityEngine;
 {{lengthResets}}
 {{arrayClears}}
 
+            Array.Clear(this._hashCodes, 0, this._count);
             this._count = 0;
         }
 
