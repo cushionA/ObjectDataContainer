@@ -19,7 +19,7 @@ namespace ToolCodeGenerator.GenContainer
         {
             // ContainerSettingAttributeが付いたクラスを検出
             IncrementalValuesProvider<GeneratorAttributeSyntaxContext> source = context.SyntaxProvider.ForAttributeWithMetadataName(
-                "ToolAttribute.GenContainer.ContainerSettingAttribute",　// 解析対象クラスについたアトリビュート
+                "ODC.Attributes.ContainerSettingAttribute",　// 解析対象クラスについたアトリビュート
                 static (node, token) => node is ClassDeclarationSyntax, // クラスの解析情報だけをフィルター
                 static (classContext, token) => classContext);// クラスの解析情報をそのまま渡すという意味のデリゲート
 
@@ -50,13 +50,42 @@ namespace ToolCodeGenerator.GenContainer
                 return;
             }
 
+            // 追加アトリビュートを読み取り
+            var allAttributes = typeSymbol.GetAttributes();
+            int initialCapacity = 130; // デフォルト値
+            string containerDescription = null;
+            bool disableReadOnlyView = false;
+            bool forEachGenerate = false;
+
+            foreach (var attr in allAttributes)
+            {
+                string attrName = attr.AttributeClass?.ToDisplayString() ?? "";
+                if (attrName == "ODC.Attributes.InitialCapacityAttribute" && attr.ConstructorArguments.Length > 0)
+                {
+                    initialCapacity = (int)attr.ConstructorArguments[0].Value;
+                }
+                else if (attrName == "ODC.Attributes.ContainerDescriptionAttribute" && attr.ConstructorArguments.Length > 0)
+                {
+                    containerDescription = attr.ConstructorArguments[0].Value as string;
+                }
+                else if (attrName == "ODC.Attributes.DisableReadOnlyViewAttribute")
+                {
+                    disableReadOnlyView = true;
+                }
+                else if (attrName == "ODC.Attributes.ForEachGenerateAttribute")
+                {
+                    forEachGenerate = true;
+                }
+            }
+
             // 名前空間取得
             string namespaceName = typeSymbol.ContainingNamespace.IsGlobalNamespace
                 ? ""
                 : typeSymbol.ContainingNamespace.ToDisplayString();
 
             // コード生成
-            string code = GenerateContainerCode(typeSymbol.Name, namespaceName, structTypes, classTypes);
+            string code = GenerateContainerCode(typeSymbol.Name, namespaceName, structTypes, classTypes,
+                initialCapacity, containerDescription, disableReadOnlyView, forEachGenerate);
             context.AddSource($"{typeSymbol.Name}.Container.g.cs", code);
         }
 
@@ -81,11 +110,12 @@ namespace ToolCodeGenerator.GenContainer
         /// <param name="structTypes">struct型の配列</param>
         /// <param name="classTypes">class型の配列</param>
         /// <returns>生成されたコード</returns>
-        static string GenerateContainerCode(string className, string namespaceName, INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
+        static string GenerateContainerCode(string className, string namespaceName, INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes,
+            int initialCapacity = 130, string containerDescription = null, bool disableReadOnlyView = false, bool forEachGenerate = false)
         {
             // 各種コード片を生成（指定された順序で配置）
             string typeDefinitions = GenerateTypeDefinitions(structTypes);
-            string constantFields = GenerateConstantFields();
+            string constantFields = GenerateConstantFields(initialCapacity);
             string fields = GenerateFields(structTypes, classTypes);
             string properties = GenerateProperties(classTypes);
             // インデクサは現在なし
@@ -94,10 +124,11 @@ namespace ToolCodeGenerator.GenContainer
             string initializeMethod = GenerateInitializeMethod(className, structTypes, classTypes);
             string addMethods = GenerateAddMethods(structTypes, classTypes);
             string removeMethods = GenerateRemoveMethods(structTypes, classTypes);
-            string getMethods = GenerateGetMethods(structTypes, classTypes);
+            string getMethods = GenerateGetMethods(structTypes, classTypes, disableReadOnlyView);
             string utilityMethods = GenerateUtilityMethods(structTypes, classTypes);
             string internalMethods = GenerateInternalMethods(structTypes);
             string disposeMethod = GenerateDisposeMethod();
+            string forEachMethod = forEachGenerate ? GenerateForEachMethod(structTypes, classTypes) : "";
 
             // 名前空間の開始と終了
             string namespaceStart = !string.IsNullOrEmpty(namespaceName) ? $"namespace {namespaceName}\n{{\n" : "";
@@ -117,12 +148,11 @@ using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
 
 {{namespaceStart}}    /// <summary>
-    /// 高性能なオブジェクトデータコンテナクラス
-    /// GameObjectをキーとして複数のデータ型を効率的に管理します
+    /// {{(containerDescription != null ? containerDescription : "高性能なオブジェクトデータコンテナクラス\n    /// GameObjectをキーとして複数のデータ型を効率的に管理します")}}
     /// </summary>
     public unsafe partial class {{className}} : IDisposable
     {
-{{typeDefinitions}}{{constantFields}}{{fields}}{{properties}}{{constructor}}{{initializeMethod}}{{addMethods}}{{removeMethods}}{{getMethods}}{{utilityMethods}}{{internalMethods}}{{disposeMethod}}    }
+{{typeDefinitions}}{{constantFields}}{{fields}}{{properties}}{{constructor}}{{initializeMethod}}{{addMethods}}{{removeMethods}}{{getMethods}}{{utilityMethods}}{{internalMethods}}{{forEachMethod}}{{disposeMethod}}    }
 {{namespaceEnd}}
 """;
         }
@@ -201,14 +231,14 @@ using UnityEngine;
         /// 定数フィールドのコードを生成します
         /// </summary>
         /// <returns>定数フィールドのコード</returns>
-        static string GenerateConstantFields()
+        static string GenerateConstantFields(int initialCapacity = 130)
         {
-            return """
+            return $$"""
 
         #region 定数フィールド
 
         /// <summary>デフォルトの最大容量</summary>
-        private const int DEFAULT_MAX_CAPACITY = 130;
+        private const int DEFAULT_MAX_CAPACITY = {{initialCapacity}};
 
         #endregion
 
@@ -567,7 +597,7 @@ using UnityEngine;
         /// <param name="structTypes">struct型の配列</param>
         /// <param name="classTypes">class型の配列</param>
         /// <returns>データ取得メソッドのコード</returns>
-        static string GenerateGetMethods(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
+        static string GenerateGetMethods(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes, bool disableReadOnlyView = false)
         {
             string[] outParams = structTypes.Select(type => $"out {type.ToDisplayString()} {ToCamelCase(type.Name)}")
                 .Concat(classTypes.Select(type => $"out {type.ToDisplayString()} {ToCamelCase(type.Name)}"))
@@ -657,6 +687,7 @@ using UnityEngine;
                 $"            value = default;\n" +
                 $"            return false;\n" +
                 $"        }}\n\n" +
+                (disableReadOnlyView ? "" :
                 $"        /// <summary>\n" +
                 $"        /// {type.Name}データの読み取り専用ビューを取得します（JobSystem用）\n" +
                 $"        /// </summary>\n" +
@@ -665,7 +696,7 @@ using UnityEngine;
                 $"        public UnsafeList<{type.ToDisplayString()}>.ReadOnly Get{type.Name}ReadOnly()\n" +
                 $"        {{\n" +
                 $"            return this._{ToCamelCase(type.Name)}.AsReadOnly();\n" +
-                $"        }}\n\n" +
+                $"        }}\n\n") +
                 $"        #endregion\n"));
 
             string individualGetMethodsClass = string.Join("\n", classTypes.Select(type =>
@@ -746,7 +777,7 @@ using UnityEngine;
 
             // まとめたビュー取得メソッドの生成
             string batchViewMethods = "";
-            if ( structTypes.Length > 0 || classTypes.Length > 0 )
+            if ( !disableReadOnlyView && (structTypes.Length > 0 || classTypes.Length > 0) )
             {
                 string structReadOnlyViewMethod = structTypes.Length > 0 ?
                     $"\n        #region まとめたビュー取得メソッド\n\n" +
@@ -1116,6 +1147,51 @@ using UnityEngine;
             this._entries.Dispose();
 
             this._isDisposed = true;
+        }
+
+        #endregion
+
+""";
+        }
+
+        /// <summary>
+        /// ForEachデリゲートとメソッドのコードを生成します
+        /// </summary>
+        /// <param name="structTypes">struct型の配列</param>
+        /// <param name="classTypes">class型の配列</param>
+        /// <returns>ForEachデリゲートとメソッドのコード</returns>
+        static string GenerateForEachMethod(INamedTypeSymbol[] structTypes, INamedTypeSymbol[] classTypes)
+        {
+            // デリゲートパラメータ: structはref、classはそのまま
+            string[] delegateParams = structTypes.Select(type => $"ref {type.ToDisplayString()} {ToCamelCase(type.Name)}")
+                .Concat(classTypes.Select(type => $"{type.ToDisplayString()} {ToCamelCase(type.Name)}"))
+                .ToArray();
+
+            // ループ内の呼び出し引数
+            string[] callArgs = structTypes.Select(type => $"ref this._{ToCamelCase(type.Name)}.ElementAt(i)")
+                .Concat(classTypes.Select(type => $"this._{ToCamelCase(type.Name)}s[i]"))
+                .ToArray();
+
+            return $$"""
+
+        #region ForEach
+
+        /// <summary>
+        /// 全データ型を引数に取るデリゲート
+        /// </summary>
+        public delegate void ForEachDelegate({{string.Join(", ", delegateParams)}});
+
+        /// <summary>
+        /// 全要素に対してデリゲートを実行します
+        /// </summary>
+        /// <param name="action">各要素に対して実行するアクション</param>
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public void ForEach(ForEachDelegate action)
+        {
+            for (int i = 0; i < this._count; i++)
+            {
+                action({{string.Join(", ", callArgs)}});
+            }
         }
 
         #endregion
