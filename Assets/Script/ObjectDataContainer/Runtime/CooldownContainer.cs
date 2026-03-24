@@ -112,6 +112,9 @@ namespace ODC.Runtime
                 throw new InvalidOperationException("オーナー数が上限に達しています。");
 
             int hashCode = obj.GetInstanceID();
+            if (TryGetIndexByHash(hashCode, out _))
+                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+
             int ownerIndex = _ownerCount;
 
             _owners[ownerIndex] = obj;
@@ -135,12 +138,18 @@ namespace ODC.Runtime
             if (!TryGetIndexByHash(hashCode, out int ownerIndex))
                 return false;
 
-            // このオーナーの全クールダウンを削除（逆順で安全に削除）
+            // このオーナーの全クールダウンを削除
+            // BackSwapで末尾要素が現在位置に移動するため、削除後にiを再チェックする
             for (int i = _cooldownCount - 1; i >= 0; i--)
             {
                 if (_cooldowns[i].OwnerIndex == ownerIndex)
                 {
                     RemoveCooldownAtIndex(i);
+                    // BackSwapで移動してきた要素も同じオーナーの可能性があるため再チェック
+                    if (i < _cooldownCount && _cooldowns[i].OwnerIndex == ownerIndex)
+                    {
+                        i++; // 次のループでiが再度チェックされる
+                    }
                 }
             }
 

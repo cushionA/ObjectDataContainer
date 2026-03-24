@@ -33,6 +33,7 @@ namespace ODC.Runtime
         }
 
         private ElementData[] _elements;
+        private T[] _dataCache;
         private int _activeCount;
         private int _maxCapacity;
         private float _cellSize;
@@ -69,10 +70,9 @@ namespace ODC.Runtime
         {
             get
             {
-                var result = new T[_activeCount];
                 for (int i = 0; i < _activeCount; i++)
-                    result[i] = _elements[i].Data;
-                return result.AsSpan();
+                    _dataCache[i] = _elements[i].Data;
+                return _dataCache.AsSpan(0, _activeCount);
             }
         }
 
@@ -89,6 +89,7 @@ namespace ODC.Runtime
             _activeCount = 0;
 
             _elements = new ElementData[maxCapacity];
+            _dataCache = new T[maxCapacity];
 
             _bucketCount = NextPowerOfTwo(maxCapacity);
             _buckets = new int[_bucketCount];
@@ -116,8 +117,11 @@ namespace ODC.Runtime
             if (_activeCount >= _maxCapacity)
                 throw new InvalidOperationException("コンテナが満杯です。");
 
-            int index = _activeCount;
             int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
+            if (TryGetIndexByHash(hashCode, out _))
+                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+
+            int index = _activeCount;
             Vector3 pos = obj.transform.position;
             int cellKey = GetCellKey(pos);
 
@@ -149,13 +153,22 @@ namespace ODC.Runtime
             if (!TryGetIndexByHash(hashCode, out int index))
                 return false;
 
+            RemoveAtIndex(index);
+            return true;
+        }
+
+        /// <summary>
+        /// インデックス指定で要素をBackSwap方式で削除する。
+        /// </summary>
+        private void RemoveAtIndex(int index)
+        {
             int lastIndex = _activeCount - 1;
 
             // セルグリッドから削除
             RemoveFromCellGrid(_elements[index].CellKey, index);
 
             // ハッシュテーブルから削除
-            RemoveFromHashTable(hashCode, index);
+            RemoveFromHashTable(_elements[index].HashCode, index);
 
             if (index < lastIndex)
             {
@@ -173,7 +186,6 @@ namespace ODC.Runtime
 
             _elements[lastIndex] = default;
             _activeCount--;
-            return true;
         }
 
         /// <summary>
@@ -181,9 +193,15 @@ namespace ODC.Runtime
         /// </summary>
         public void Update()
         {
-            for (int i = 0; i < _activeCount; i++)
+            for (int i = _activeCount - 1; i >= 0; i--)
             {
                 ref var element = ref _elements[i];
+                if (element.GameObject == null)
+                {
+                    RemoveAtIndex(i);
+                    continue;
+                }
+
                 Vector3 pos = element.GameObject.transform.position;
                 int newCellKey = GetCellKey(pos);
 

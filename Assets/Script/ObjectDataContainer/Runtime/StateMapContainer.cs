@@ -77,8 +77,11 @@ namespace ODC.Runtime
             if (_activeCount >= _maxCapacity)
                 throw new InvalidOperationException("コンテナが満杯です。");
 
-            int index = _activeCount;
             int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
+            if (TryGetIndexByHash(hashCode, out _))
+                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+
+            int index = _activeCount;
 
             _gameObjects[index] = obj;
             _states[index] = new StateEntry

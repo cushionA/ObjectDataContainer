@@ -87,6 +87,9 @@ namespace ODC.Runtime
                 throw new InvalidOperationException("コンテナが満杯です。");
 
             int hashCode = obj.GetInstanceID();
+            if (TryGetIndexByHash(hashCode, out _))
+                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+
             int dataIndex = _activeCount;
 
             _data[dataIndex] = data;

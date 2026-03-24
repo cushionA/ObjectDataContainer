@@ -96,6 +96,9 @@ namespace ODC.Runtime
                 throw new InvalidOperationException("プールが満杯です。");
 
             int hashCode = obj.GetInstanceID();
+            if (TryGetIndexByHash(hashCode, out _))
+                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+
             int dataIndex = _activeCount;
 
             _elements[dataIndex] = new ElementData
@@ -156,8 +159,7 @@ namespace ODC.Runtime
                 return false;
             }
 
-            if (priority > _elements[lowestIdx].Priority ||
-                (priority == _elements[lowestIdx].Priority))
+            if (priority > _elements[lowestIdx].Priority)
             {
                 evicted = _elements[lowestIdx].Data;
                 RemoveAtIndex(lowestIdx);

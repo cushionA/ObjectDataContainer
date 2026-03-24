@@ -124,6 +124,9 @@ namespace ODC.Runtime
                 throw new KeyNotFoundException($"グループ '{groupName}' は存在しません。");
 
             int hashCode = obj.GetInstanceID();
+            if (TryGetIndexByHash(hashCode, out _))
+                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+
             int dataIndex = _activeCount;
 
             _elements[dataIndex] = new ElementData
