@@ -52,7 +52,6 @@ namespace ODC.Runtime
         /// <summary>
         /// コンストラクタ。指定された最大容量でコンテナを初期化する。
         /// </summary>
-        /// <param name="maxCapacity">最大容量</param>
         public TimedDataContainer(int maxCapacity)
         {
             _maxCapacity = maxCapacity;
@@ -73,31 +72,31 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectとデータをコンテナに追加する。
         /// </summary>
-        /// <param name="obj">キーとなるGameObject</param>
-        /// <param name="data">格納するデータ</param>
-        /// <param name="duration">持続時間（秒）</param>
-        /// <returns>データが格納されたインデックス</returns>
-        /// <exception cref="ArgumentNullException">objがnullの場合</exception>
-        /// <exception cref="InvalidOperationException">コンテナが満杯の場合</exception>
         public int Add(GameObject obj, T data, float duration)
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            return Add(obj.GetInstanceID(), data, duration);
+        }
+
+        /// <summary>
+        /// int hashとデータをコンテナに追加する。
+        /// </summary>
+        public int Add(int hash, T data, float duration)
+        {
             if (_activeCount >= _maxCapacity)
                 throw new InvalidOperationException("コンテナが満杯です。");
-
-            int hashCode = obj.GetInstanceID();
-            if (TryGetIndexByHash(hashCode, out _))
-                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+            if (TryGetIndexByHash(hash, out _))
+                throw new InvalidOperationException("同じハッシュが既に登録されています。");
 
             int dataIndex = _activeCount;
 
             _data[dataIndex] = data;
             _remainingTime[dataIndex] = duration;
-            _indexToHash[dataIndex] = hashCode;
+            _indexToHash[dataIndex] = hash;
             _activeCount++;
 
-            RegisterToHashTable(hashCode, dataIndex);
+            RegisterToHashTable(hash, dataIndex);
 
             return dataIndex;
         }
@@ -105,15 +104,19 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectの要素をBackSwap方式で削除する。
         /// </summary>
-        /// <param name="obj">削除対象のGameObject</param>
-        /// <returns>削除に成功した場合true</returns>
         public bool Remove(GameObject obj)
         {
             if (obj == null)
                 return false;
+            return Remove(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int dataIndex))
+        /// <summary>
+        /// 指定されたint hashの要素をBackSwap方式で削除する。
+        /// </summary>
+        public bool Remove(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int dataIndex))
                 return false;
 
             BackSwapRemove(dataIndex);
@@ -123,8 +126,6 @@ namespace ODC.Runtime
         /// <summary>
         /// 全タイマーを更新し、期限切れの要素をBackSwapで削除する。
         /// </summary>
-        /// <param name="deltaTime">経過時間（秒）</param>
-        /// <returns>削除された要素数</returns>
         public virtual int Update(float deltaTime)
         {
             int removed = 0;
@@ -144,30 +145,33 @@ namespace ODC.Runtime
         /// <summary>
         /// 要素の期限切れ時に呼ばれる仮想メソッド。サブクラスでオーバーライド可能。
         /// </summary>
-        /// <param name="data">期限切れになったデータ</param>
         protected virtual void OnElementExpired(T data)
         {
-            // 基底クラスでは何もしない
         }
 
         /// <summary>
         /// 指定されたGameObjectのデータと残り時間を取得する。
         /// </summary>
-        /// <param name="obj">検索対象のGameObject</param>
-        /// <param name="data">取得されたデータ</param>
-        /// <param name="remainingTime">残り時間</param>
-        /// <returns>見つかった場合true</returns>
         public bool TryGetValue(GameObject obj, out T data, out float remainingTime)
         {
             if (obj != null)
+                return TryGetValue(obj.GetInstanceID(), out data, out remainingTime);
+
+            data = null;
+            remainingTime = 0f;
+            return false;
+        }
+
+        /// <summary>
+        /// 指定されたint hashのデータと残り時間を取得する。
+        /// </summary>
+        public bool TryGetValue(int hash, out T data, out float remainingTime)
+        {
+            if (TryGetIndexByHash(hash, out int dataIndex))
             {
-                int hashCode = obj.GetInstanceID();
-                if (TryGetIndexByHash(hashCode, out int dataIndex))
-                {
-                    data = _data[dataIndex];
-                    remainingTime = _remainingTime[dataIndex];
-                    return true;
-                }
+                data = _data[dataIndex];
+                remainingTime = _remainingTime[dataIndex];
+                return true;
             }
 
             data = null;
@@ -178,8 +182,6 @@ namespace ODC.Runtime
         /// <summary>
         /// インデックスでデータを直接取得する。
         /// </summary>
-        /// <param name="index">データインデックス</param>
-        /// <returns>指定インデックスのデータ</returns>
         public T GetByIndex(int index)
         {
             return _data[index];
@@ -188,14 +190,19 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectがコンテナに存在するか確認する。
         /// </summary>
-        /// <param name="obj">検索対象のGameObject</param>
-        /// <returns>存在する場合true</returns>
         public bool ContainsKey(GameObject obj)
         {
             if (obj == null)
                 return false;
-            int hashCode = obj.GetInstanceID();
-            return TryGetIndexByHash(hashCode, out _);
+            return ContainsKey(obj.GetInstanceID());
+        }
+
+        /// <summary>
+        /// 指定されたint hashがコンテナに存在するか確認する。
+        /// </summary>
+        public bool ContainsKey(int hash)
+        {
+            return TryGetIndexByHash(hash, out _);
         }
 
         /// <summary>
@@ -258,11 +265,6 @@ namespace ODC.Runtime
         // BackSwap削除ロジック
         // =============================================
 
-        /// <summary>
-        /// BackSwap方式でデータ配列から要素を削除する。
-        /// 最後尾の要素を削除位置に移動し、ハッシュテーブルを更新する。
-        /// </summary>
-        /// <param name="dataIndex">削除するデータのインデックス</param>
         private void BackSwapRemove(int dataIndex)
         {
             int removedHash = _indexToHash[dataIndex];
@@ -276,7 +278,6 @@ namespace ODC.Runtime
                 _remainingTime[dataIndex] = _remainingTime[lastIndex];
                 _indexToHash[dataIndex] = movedHash;
 
-                // 移動した要素のハッシュエントリのValueIndexを更新
                 UpdateEntryDataIndex(movedHash, dataIndex);
             }
 
@@ -289,17 +290,11 @@ namespace ODC.Runtime
         // ハッシュテーブル操作
         // =============================================
 
-        /// <summary>
-        /// ハッシュコードからバケットインデックスを計算する。
-        /// </summary>
         private int GetBucketIndex(int hashCode)
         {
             return (hashCode & 0x7FFFFFFF) % _bucketCount;
         }
 
-        /// <summary>
-        /// ハッシュテーブルに新しいエントリを登録する。
-        /// </summary>
         private void RegisterToHashTable(int hashCode, int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -324,9 +319,6 @@ namespace ODC.Runtime
             _buckets[bucketIndex] = entryIndex;
         }
 
-        /// <summary>
-        /// ハッシュテーブルからエントリを削除し、エントリインデックスを再利用可能にする。
-        /// </summary>
         private void RemoveFromHashTable(int hashCode)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -350,9 +342,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// ハッシュコードからデータインデックスを検索する。
-        /// </summary>
         private bool TryGetIndexByHash(int hashCode, out int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -372,9 +361,6 @@ namespace ODC.Runtime
             return false;
         }
 
-        /// <summary>
-        /// 指定ハッシュコードのエントリのValueIndexを更新する（BackSwap後の移動先を反映）。
-        /// </summary>
         private void UpdateEntryDataIndex(int hashCode, int newDataIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -393,9 +379,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// 容量に基づいて適切な素数バケットサイズを取得する。
-        /// </summary>
         private static int GetPrimeBucketCount(int capacity)
         {
             int target = (int)(capacity * 1.5f);

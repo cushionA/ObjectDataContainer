@@ -78,8 +78,6 @@ namespace ODC.Runtime
         /// <summary>
         /// コンストラクタ。
         /// </summary>
-        /// <param name="maxOwners">最大オーナー数</param>
-        /// <param name="maxEffectsTotal">最大エフェクト総数（デフォルト: maxOwners * 8）</param>
         public StackableEffectContainer(int maxOwners, int maxEffectsTotal = -1)
         {
             _maxOwners = maxOwners;
@@ -113,19 +111,25 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            AddOwner(obj.GetInstanceID());
+            _owners[_ownerCount - 1] = obj;
+        }
+
+        /// <summary>
+        /// int hashをオーナーとして追加する。
+        /// </summary>
+        public void AddOwner(int hash)
+        {
             if (_ownerCount >= _maxOwners)
                 throw new InvalidOperationException("オーナー数が上限に達しています。");
-
-            int hashCode = obj.GetInstanceID();
-            if (TryGetIndexByHash(hashCode, out _))
-                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+            if (TryGetIndexByHash(hash, out _))
+                throw new InvalidOperationException("同じハッシュが既に登録されています。");
 
             int ownerIndex = _ownerCount;
-            _owners[ownerIndex] = obj;
-            _ownerData[ownerIndex] = new OwnerData { HashCode = hashCode };
+            _ownerData[ownerIndex] = new OwnerData { HashCode = hash };
             _ownerCount++;
 
-            RegisterToHashTable(hashCode, ownerIndex);
+            RegisterToHashTable(hash, ownerIndex);
         }
 
         /// <summary>
@@ -135,13 +139,17 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
+            return RemoveOwner(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// int hashをオーナーから削除する。関連する全エフェクトも削除される。
+        /// </summary>
+        public bool RemoveOwner(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return false;
 
-            // 逆順走査でBackSwap削除：末尾要素が現在位置に移動するが、
-            // 移動元は既に走査済みなので再チェック不要
             for (int i = _effectCount - 1; i >= 0; i--)
             {
                 if (_effects[i].OwnerIndex == ownerIndex)
@@ -161,8 +169,15 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            int hashCode = obj.GetInstanceID();
-            return TryGetIndexByHash(hashCode, out _);
+            return ContainsOwner(obj.GetInstanceID());
+        }
+
+        /// <summary>
+        /// 指定されたint hashがオーナーとして登録されているか確認する。
+        /// </summary>
+        public bool ContainsOwner(int hash)
+        {
+            return TryGetIndexByHash(hash, out _);
         }
 
         // =============================================
@@ -170,27 +185,26 @@ namespace ODC.Runtime
         // =============================================
 
         /// <summary>
-        /// エフェクトを適用する。
-        /// 同一 effectKey のスロットが存在する場合はスタックを追加し継続時間を更新。
-        /// 存在しない場合は新規登録。
+        /// エフェクトを適用する（GameObject版）。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="effectKey">エフェクトキー（enum等をintにキャスト）</param>
-        /// <param name="effectData">エフェクトデータ</param>
-        /// <param name="addStacks">追加するスタック数</param>
-        /// <param name="duration">持続時間（秒）。-1で無期限。</param>
-        /// <param name="tickInterval">Tick間隔（秒）。-1でTickなし。</param>
-        /// <returns>適用に成功した場合true</returns>
         public bool Apply(GameObject obj, int effectKey, in TEffect effectData,
             int addStacks = 1, float duration = -1f, float tickInterval = -1f)
         {
             if (obj == null) return false;
+            return Apply(obj.GetInstanceID(), effectKey, effectData, addStacks, duration, tickInterval);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// エフェクトを適用する（int hash版）。
+        /// 同一 effectKey のスロットが存在する場合はスタックを追加し継続時間を更新。
+        /// 存在しない場合は新規登録。
+        /// </summary>
+        public bool Apply(int hash, int effectKey, in TEffect effectData,
+            int addStacks = 1, float duration = -1f, float tickInterval = -1f)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return false;
 
-            // 既存のエフェクトを検索
             for (int i = 0; i < _effectCount; i++)
             {
                 if (_effects[i].OwnerIndex == ownerIndex && _effects[i].EffectKey == effectKey)
@@ -198,12 +212,11 @@ namespace ODC.Runtime
                     _effects[i].StackCount += addStacks;
                     _effects[i].EffectData = effectData;
                     if (duration >= 0f)
-                        _effects[i].RemainingTime = duration; // 継続時間をリフレッシュ
+                        _effects[i].RemainingTime = duration;
                     return true;
                 }
             }
 
-            // 新規登録
             if (_effectCount >= _maxEffects)
                 return false;
 
@@ -222,15 +235,20 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// 指定エフェクトを即時解除。
+        /// 指定エフェクトを即時解除（GameObject版）。
         /// </summary>
-        /// <returns>解除に成功した場合true</returns>
         public bool Remove(GameObject obj, int effectKey)
         {
             if (obj == null) return false;
+            return Remove(obj.GetInstanceID(), effectKey);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定エフェクトを即時解除（int hash版）。
+        /// </summary>
+        public bool Remove(int hash, int effectKey)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return false;
 
             for (int i = 0; i < _effectCount; i++)
@@ -245,14 +263,20 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// 指定エフェクトが発動中か。
+        /// 指定エフェクトが発動中か（GameObject版）。
         /// </summary>
         public bool IsActive(GameObject obj, int effectKey)
         {
             if (obj == null) return false;
+            return IsActive(obj.GetInstanceID(), effectKey);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定エフェクトが発動中か（int hash版）。
+        /// </summary>
+        public bool IsActive(int hash, int effectKey)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return false;
 
             for (int i = 0; i < _effectCount; i++)
@@ -264,14 +288,20 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// スタック数を取得。
+        /// スタック数を取得（GameObject版）。
         /// </summary>
         public int GetStacks(GameObject obj, int effectKey)
         {
             if (obj == null) return 0;
+            return GetStacks(obj.GetInstanceID(), effectKey);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// スタック数を取得（int hash版）。
+        /// </summary>
+        public int GetStacks(int hash, int effectKey)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return 0;
 
             for (int i = 0; i < _effectCount; i++)
@@ -283,17 +313,22 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// エンティティのアクティブエフェクトを全て列挙する。
-        /// results に (effectKey, effectData, stacks, remainingTime) を書き込み、件数を返す。
-        /// UI表示・デバッグ用途を想定。GCフリー（Span で受け取る）。
+        /// エンティティのアクティブエフェクトを全て列挙する（GameObject版）。
         /// </summary>
         public int GetActiveEffects(GameObject obj,
             Span<(int effectKey, TEffect effectData, int stacks, float remainingTime)> results)
         {
             if (obj == null) return 0;
+            return GetActiveEffects(obj.GetInstanceID(), results);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// エンティティのアクティブエフェクトを全て列挙する（int hash版）。
+        /// </summary>
+        public int GetActiveEffects(int hash,
+            Span<(int effectKey, TEffect effectData, int stacks, float remainingTime)> results)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return 0;
 
             int count = 0;
@@ -314,14 +349,20 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// アクティブエフェクト数（現在かかっているエフェクトの種類数）。
+        /// アクティブエフェクト数（GameObject版）。
         /// </summary>
         public int GetActiveCount(GameObject obj)
         {
             if (obj == null) return 0;
+            return GetActiveCount(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// アクティブエフェクト数（int hash版）。
+        /// </summary>
+        public int GetActiveCount(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return 0;
 
             int count = 0;
@@ -339,8 +380,6 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 全エンティティを一括Tick。
-        /// 期限切れスロットを自動解放し、TickInterval到達時にonTickを呼ぶ。
-        /// コールバック内でこのコンテナのApply/Removeを呼ばないこと（走査中の配列変更で不整合になる）。
         /// </summary>
         public void TickAll(float deltaTime,
             TickCallback onTick = null,
@@ -351,20 +390,17 @@ namespace ODC.Runtime
                 ref EffectEntry effect = ref _effects[i];
                 int entityHash = _ownerData[effect.OwnerIndex].HashCode;
 
-                // 持続時間の更新
                 if (effect.RemainingTime >= 0f)
                 {
                     effect.RemainingTime -= deltaTime;
                     if (effect.RemainingTime <= 0f)
                     {
-                        // 期限切れ
                         onExpire?.Invoke(entityHash, effect.EffectKey, effect.EffectData);
                         RemoveEffectAtIndex(i);
                         continue;
                     }
                 }
 
-                // TickInterval処理（大きなdeltaTimeで複数回発火）
                 if (effect.TickInterval > 0f)
                 {
                     effect.TickElapsed += deltaTime;
@@ -435,7 +471,6 @@ namespace ODC.Runtime
                 _owners[ownerIndex] = _owners[lastIndex];
                 _ownerData[ownerIndex] = _ownerData[lastIndex];
 
-                // 移動したオーナーを参照するエフェクトのOwnerIndexを更新
                 for (int i = 0; i < _effectCount; i++)
                 {
                     if (_effects[i].OwnerIndex == lastIndex)

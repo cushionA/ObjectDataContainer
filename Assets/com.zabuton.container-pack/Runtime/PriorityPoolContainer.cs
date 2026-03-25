@@ -60,7 +60,6 @@ namespace ODC.Runtime
         /// <summary>
         /// コンストラクタ。指定された最大容量でプールを初期化する。
         /// </summary>
-        /// <param name="maxCapacity">最大容量</param>
         public PriorityPoolContainer(int maxCapacity)
         {
             _maxCapacity = maxCapacity;
@@ -81,23 +80,22 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectとデータをプールに追加する。
         /// </summary>
-        /// <param name="obj">キーとなるGameObject</param>
-        /// <param name="data">格納するデータ</param>
-        /// <param name="priority">優先度（デフォルト: 0f、全て同一ならFIFO退去）</param>
-        /// <param name="duration">持続時間（デフォルト: -1f、負値は無期限）</param>
-        /// <returns>データが格納されたインデックス</returns>
-        /// <exception cref="ArgumentNullException">objがnullの場合</exception>
-        /// <exception cref="InvalidOperationException">コンテナが満杯の場合</exception>
         public int Add(GameObject obj, T data, float priority = 0f, float duration = -1f)
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            return Add(obj.GetInstanceID(), data, priority, duration);
+        }
+
+        /// <summary>
+        /// int hashとデータをプールに追加する。
+        /// </summary>
+        public int Add(int hash, T data, float priority = 0f, float duration = -1f)
+        {
             if (_activeCount >= _maxCapacity)
                 throw new InvalidOperationException("プールが満杯です。");
-
-            int hashCode = obj.GetInstanceID();
-            if (TryGetIndexByHash(hashCode, out _))
-                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+            if (TryGetIndexByHash(hash, out _))
+                throw new InvalidOperationException("同じハッシュが既に登録されています。");
 
             int dataIndex = _activeCount;
 
@@ -106,12 +104,12 @@ namespace ODC.Runtime
                 Data = data,
                 Priority = priority,
                 RemainingTime = duration,
-                HashCode = hashCode,
+                HashCode = hash,
                 InsertionOrder = _insertionCounter++
             };
             _activeCount++;
 
-            RegisterToHashTable(hashCode, dataIndex);
+            RegisterToHashTable(hash, dataIndex);
 
             return dataIndex;
         }
@@ -119,15 +117,19 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectの要素をBackSwap方式で削除する。
         /// </summary>
-        /// <param name="obj">削除対象のGameObject</param>
-        /// <returns>削除に成功した場合true</returns>
         public bool Remove(GameObject obj)
         {
             if (obj == null)
                 return false;
+            return Remove(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int dataIndex))
+        /// <summary>
+        /// 指定されたint hashの要素をBackSwap方式で削除する。
+        /// </summary>
+        public bool Remove(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int dataIndex))
                 return false;
 
             RemoveAtIndex(dataIndex);
@@ -137,18 +139,22 @@ namespace ODC.Runtime
         /// <summary>
         /// 追加を試みる。満杯の場合は最低優先度の要素を退去させる。
         /// </summary>
-        /// <param name="obj">追加するGameObject</param>
-        /// <param name="data">格納するデータ</param>
-        /// <param name="evicted">退去されたデータ（退去がない場合null）</param>
-        /// <param name="priority">優先度（デフォルト: 0f）</param>
-        /// <param name="duration">持続時間（デフォルト: -1f、負値は無期限）</param>
-        /// <returns>追加に成功した場合true</returns>
         public bool TryAddOrEvict(GameObject obj, T data, out T evicted, float priority = 0f, float duration = -1f)
+        {
+            if (obj == null)
+                throw new ArgumentNullException(nameof(obj));
+            return TryAddOrEvict(obj.GetInstanceID(), data, out evicted, priority, duration);
+        }
+
+        /// <summary>
+        /// 追加を試みる。満杯の場合は最低優先度の要素を退去させる。
+        /// </summary>
+        public bool TryAddOrEvict(int hash, T data, out T evicted, float priority = 0f, float duration = -1f)
         {
             if (_activeCount < _maxCapacity)
             {
                 evicted = null;
-                Add(obj, data, priority, duration);
+                Add(hash, data, priority, duration);
                 return true;
             }
 
@@ -163,7 +169,7 @@ namespace ODC.Runtime
             {
                 evicted = _elements[lowestIdx].Data;
                 RemoveAtIndex(lowestIdx);
-                Add(obj, data, priority, duration);
+                Add(hash, data, priority, duration);
                 return true;
             }
 
@@ -174,15 +180,13 @@ namespace ODC.Runtime
         /// <summary>
         /// タイマーを更新し、期限切れの要素を削除する（コールバックなし）。
         /// </summary>
-        /// <param name="deltaTime">経過時間（秒）</param>
-        /// <returns>削除された要素数</returns>
         public int Update(float deltaTime)
         {
             int removed = 0;
             for (int i = _activeCount - 1; i >= 0; i--)
             {
                 if (_elements[i].RemainingTime < 0f)
-                    continue; // 無期限要素はスキップ
+                    continue;
 
                 _elements[i].RemainingTime -= deltaTime;
                 if (_elements[i].RemainingTime <= 0f)
@@ -196,18 +200,14 @@ namespace ODC.Runtime
 
         /// <summary>
         /// タイマーを更新し、期限切れの要素を削除する。期限切れ時にコールバックを呼び出す。
-        /// コールバックはUpdate()呼び出し毎に渡され、内部に保存されない（GC回避）。
         /// </summary>
-        /// <param name="deltaTime">経過時間（秒）</param>
-        /// <param name="onExpired">期限切れ時に呼ばれるコールバック</param>
-        /// <returns>削除された要素数</returns>
         public int Update(float deltaTime, Action<T> onExpired)
         {
             int removed = 0;
             for (int i = _activeCount - 1; i >= 0; i--)
             {
                 if (_elements[i].RemainingTime < 0f)
-                    continue; // 無期限要素はスキップ
+                    continue;
 
                 _elements[i].RemainingTime -= deltaTime;
                 if (_elements[i].RemainingTime <= 0f)
@@ -223,14 +223,18 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectの優先度を更新する。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="newPriority">新しい優先度</param>
         public void UpdatePriority(GameObject obj, float newPriority)
         {
             if (obj == null) return;
+            UpdatePriority(obj.GetInstanceID(), newPriority);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (TryGetIndexByHash(hashCode, out int dataIndex))
+        /// <summary>
+        /// 指定されたint hashの優先度を更新する。
+        /// </summary>
+        public void UpdatePriority(int hash, float newPriority)
+        {
+            if (TryGetIndexByHash(hash, out int dataIndex))
             {
                 var element = _elements[dataIndex];
                 element.Priority = newPriority;
@@ -241,37 +245,45 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectの優先度を取得する。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <returns>優先度の値</returns>
-        /// <exception cref="KeyNotFoundException">GameObjectが見つからない場合</exception>
         public float GetPriority(GameObject obj)
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            return GetPriority(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (TryGetIndexByHash(hashCode, out int dataIndex))
+        /// <summary>
+        /// 指定されたint hashの優先度を取得する。
+        /// </summary>
+        public float GetPriority(int hash)
+        {
+            if (TryGetIndexByHash(hash, out int dataIndex))
                 return _elements[dataIndex].Priority;
 
-            throw new KeyNotFoundException("指定されたGameObjectはプールに存在しません。");
+            throw new KeyNotFoundException("指定されたハッシュはプールに存在しません。");
         }
 
         /// <summary>
         /// 指定されたGameObjectのデータを取得する。
         /// </summary>
-        /// <param name="obj">検索対象のGameObject</param>
-        /// <param name="data">取得されたデータ</param>
-        /// <returns>見つかった場合true</returns>
         public bool TryGetValue(GameObject obj, out T data)
         {
             if (obj != null)
+                return TryGetValue(obj.GetInstanceID(), out data);
+
+            data = null;
+            return false;
+        }
+
+        /// <summary>
+        /// 指定されたint hashのデータを取得する。
+        /// </summary>
+        public bool TryGetValue(int hash, out T data)
+        {
+            if (TryGetIndexByHash(hash, out int dataIndex))
             {
-                int hashCode = obj.GetInstanceID();
-                if (TryGetIndexByHash(hashCode, out int dataIndex))
-                {
-                    data = _elements[dataIndex].Data;
-                    return true;
-                }
+                data = _elements[dataIndex].Data;
+                return true;
             }
 
             data = null;
@@ -281,8 +293,6 @@ namespace ODC.Runtime
         /// <summary>
         /// インデックスでデータを直接取得する。
         /// </summary>
-        /// <param name="index">データインデックス</param>
-        /// <returns>指定インデックスのデータ</returns>
         public T GetByIndex(int index)
         {
             return _elements[index].Data;
@@ -291,14 +301,19 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectがプールに存在するか確認する。
         /// </summary>
-        /// <param name="obj">検索対象のGameObject</param>
-        /// <returns>存在する場合true</returns>
         public bool ContainsKey(GameObject obj)
         {
             if (obj == null)
                 return false;
-            int hashCode = obj.GetInstanceID();
-            return TryGetIndexByHash(hashCode, out _);
+            return ContainsKey(obj.GetInstanceID());
+        }
+
+        /// <summary>
+        /// 指定されたint hashがプールに存在するか確認する。
+        /// </summary>
+        public bool ContainsKey(int hash)
+        {
+            return TryGetIndexByHash(hash, out _);
         }
 
         /// <summary>
@@ -336,10 +351,6 @@ namespace ODC.Runtime
         // 最低優先度検索（退去用）
         // =============================================
 
-        /// <summary>
-        /// 最低優先度の要素のインデックスを検索する。同一優先度の場合、挿入順序が早い方を返す（FIFO）。
-        /// </summary>
-        /// <returns>最低優先度の要素のインデックス。要素がない場合は-1</returns>
         private int FindLowestPriorityIndex()
         {
             if (_activeCount == 0) return -1;
@@ -366,11 +377,6 @@ namespace ODC.Runtime
         // BackSwap削除ロジック
         // =============================================
 
-        /// <summary>
-        /// BackSwap方式で指定インデックスの要素を削除する。
-        /// 最後尾の要素を削除位置に移動し、ハッシュテーブルを更新する。
-        /// </summary>
-        /// <param name="dataIndex">削除するデータのインデックス</param>
         private void RemoveAtIndex(int dataIndex)
         {
             int removedHash = _elements[dataIndex].HashCode;
@@ -382,7 +388,6 @@ namespace ODC.Runtime
 
                 _elements[dataIndex] = _elements[lastIndex];
 
-                // 移動した要素のハッシュエントリのValueIndexを更新
                 UpdateEntryDataIndex(movedHash, dataIndex);
             }
 
@@ -395,17 +400,11 @@ namespace ODC.Runtime
         // ハッシュテーブル操作
         // =============================================
 
-        /// <summary>
-        /// ハッシュコードからバケットインデックスを計算する。
-        /// </summary>
         private int GetBucketIndex(int hashCode)
         {
             return (hashCode & 0x7FFFFFFF) % _bucketCount;
         }
 
-        /// <summary>
-        /// ハッシュテーブルに新しいエントリを登録する。
-        /// </summary>
         private void RegisterToHashTable(int hashCode, int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -430,9 +429,6 @@ namespace ODC.Runtime
             _buckets[bucketIndex] = entryIndex;
         }
 
-        /// <summary>
-        /// ハッシュテーブルからエントリを削除し、エントリインデックスを再利用可能にする。
-        /// </summary>
         private void RemoveFromHashTable(int hashCode)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -460,9 +456,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// ハッシュコードからデータインデックスを検索する。
-        /// </summary>
         private bool TryGetIndexByHash(int hashCode, out int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -482,9 +475,6 @@ namespace ODC.Runtime
             return false;
         }
 
-        /// <summary>
-        /// 指定ハッシュコードのエントリのValueIndexを更新する（BackSwap後の移動先を反映）。
-        /// </summary>
         private void UpdateEntryDataIndex(int hashCode, int newDataIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -503,9 +493,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// 容量に基づいて適切な素数バケットサイズを取得する。
-        /// </summary>
         private static int GetPrimeBucketCount(int capacity)
         {
             int target = (int)(capacity * 1.5f);

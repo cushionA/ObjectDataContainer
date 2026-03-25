@@ -67,11 +67,7 @@ namespace ODC.Runtime
 
         /// <summary>
         /// コンストラクタ。指定された最大容量とグループ名でコンテナを初期化する。
-        /// グループはコンストラクタ時に事前定義される。
         /// </summary>
-        /// <param name="maxCapacity">最大容量</param>
-        /// <param name="groupNames">事前定義するグループ名の配列</param>
-        /// <exception cref="ArgumentException">グループ数が最大値を超える場合</exception>
         public GroupContainer(int maxCapacity, string[] groupNames)
         {
             if (groupNames == null)
@@ -107,40 +103,40 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectとデータを指定グループに追加する。
         /// </summary>
-        /// <param name="obj">キーとなるGameObject</param>
-        /// <param name="data">格納するデータ</param>
-        /// <param name="groupName">所属グループ名</param>
-        /// <returns>データが格納されたインデックス</returns>
-        /// <exception cref="ArgumentNullException">objがnullの場合</exception>
-        /// <exception cref="InvalidOperationException">コンテナが満杯の場合</exception>
-        /// <exception cref="KeyNotFoundException">指定グループが存在しない場合</exception>
         public int Add(GameObject obj, T data, string groupName)
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            int idx = Add(obj.GetInstanceID(), data, groupName);
+            _elements[idx].GameObject = obj;
+            return idx;
+        }
+
+        /// <summary>
+        /// int hashとデータを指定グループに追加する。
+        /// </summary>
+        public int Add(int hash, T data, string groupName)
+        {
             if (_activeCount >= _maxCapacity)
                 throw new InvalidOperationException("コンテナが満杯です。");
             if (!_groupNameToId.TryGetValue(groupName, out int groupId))
                 throw new KeyNotFoundException($"グループ '{groupName}' は存在しません。");
-
-            int hashCode = obj.GetInstanceID();
-            if (TryGetIndexByHash(hashCode, out _))
-                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+            if (TryGetIndexByHash(hash, out _))
+                throw new InvalidOperationException("同じハッシュが既に登録されています。");
 
             int dataIndex = _activeCount;
 
             _elements[dataIndex] = new ElementData
             {
-                GameObject = obj,
                 Data = data,
                 GroupId = groupId,
-                HashCode = hashCode
+                HashCode = hash
             };
             _activeCount++;
 
             _groups[groupId].Count++;
 
-            RegisterToHashTable(hashCode, dataIndex);
+            RegisterToHashTable(hash, dataIndex);
 
             return dataIndex;
         }
@@ -148,15 +144,19 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectの要素をBackSwap方式で削除する。
         /// </summary>
-        /// <param name="obj">削除対象のGameObject</param>
-        /// <returns>削除に成功した場合true</returns>
         public bool Remove(GameObject obj)
         {
             if (obj == null)
                 return false;
+            return Remove(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int dataIndex))
+        /// <summary>
+        /// 指定されたint hashの要素をBackSwap方式で削除する。
+        /// </summary>
+        public bool Remove(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int dataIndex))
                 return false;
 
             int groupId = _elements[dataIndex].GroupId;
@@ -168,20 +168,23 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 指定されたGameObjectを別のグループに移動する。
-        /// データの物理的な移動は行わず、グループIDのみを更新する。
         /// </summary>
-        /// <param name="obj">移動対象のGameObject</param>
-        /// <param name="newGroup">移動先のグループ名</param>
-        /// <returns>移動に成功した場合true</returns>
         public bool MoveToGroup(GameObject obj, string newGroup)
         {
             if (obj == null)
                 return false;
+            return MoveToGroup(obj.GetInstanceID(), newGroup);
+        }
+
+        /// <summary>
+        /// 指定されたint hashを別のグループに移動する。
+        /// </summary>
+        public bool MoveToGroup(int hash, string newGroup)
+        {
             if (!_groupNameToId.TryGetValue(newGroup, out int newGroupId))
                 return false;
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int dataIndex))
+            if (!TryGetIndexByHash(hash, out int dataIndex))
                 return false;
 
             int oldGroupId = _elements[dataIndex].GroupId;
@@ -198,21 +201,26 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectのデータとグループ名を取得する。
         /// </summary>
-        /// <param name="obj">検索対象のGameObject</param>
-        /// <param name="data">取得されたデータ</param>
-        /// <param name="groupName">所属グループ名</param>
-        /// <returns>見つかった場合true</returns>
         public bool TryGetValue(GameObject obj, out T data, out string groupName)
         {
             if (obj != null)
+                return TryGetValue(obj.GetInstanceID(), out data, out groupName);
+
+            data = null;
+            groupName = null;
+            return false;
+        }
+
+        /// <summary>
+        /// 指定されたint hashのデータとグループ名を取得する。
+        /// </summary>
+        public bool TryGetValue(int hash, out T data, out string groupName)
+        {
+            if (TryGetIndexByHash(hash, out int dataIndex))
             {
-                int hashCode = obj.GetInstanceID();
-                if (TryGetIndexByHash(hashCode, out int dataIndex))
-                {
-                    data = _elements[dataIndex].Data;
-                    groupName = _groupIdToName[_elements[dataIndex].GroupId];
-                    return true;
-                }
+                data = _elements[dataIndex].Data;
+                groupName = _groupIdToName[_elements[dataIndex].GroupId];
+                return true;
             }
 
             data = null;
@@ -221,11 +229,8 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// 指定グループのデータをSpanに書き込む。線形スキャンで該当グループの要素を検索する。
+        /// 指定グループのデータをSpanに書き込む。
         /// </summary>
-        /// <param name="groupName">グループ名</param>
-        /// <param name="results">結果を格納するSpan</param>
-        /// <returns>書き込まれた要素数</returns>
         public int GetGroup(string groupName, Span<T> results)
         {
             if (!_groupNameToId.TryGetValue(groupName, out int groupId))
@@ -245,9 +250,6 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定グループのGameObjectをSpanに書き込む。
         /// </summary>
-        /// <param name="groupName">グループ名</param>
-        /// <param name="results">結果を格納するSpan</param>
-        /// <returns>書き込まれた要素数</returns>
         public int GetGroupObjects(string groupName, Span<GameObject> results)
         {
             if (!_groupNameToId.TryGetValue(groupName, out int groupId))
@@ -267,8 +269,6 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定グループの要素数を取得する。
         /// </summary>
-        /// <param name="groupName">グループ名</param>
-        /// <returns>グループ内の要素数</returns>
         public int GetGroupCount(string groupName)
         {
             if (!_groupNameToId.TryGetValue(groupName, out int groupId))
@@ -279,8 +279,6 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたグループ名が定義されているか確認する。
         /// </summary>
-        /// <param name="groupName">確認するグループ名</param>
-        /// <returns>グループが存在する場合true</returns>
         public bool GroupExists(string groupName)
         {
             return _groupNameToId.ContainsKey(groupName);
@@ -289,8 +287,6 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定グループの全要素に対してアクションを実行する。
         /// </summary>
-        /// <param name="groupName">グループ名</param>
-        /// <param name="action">各要素に対して実行するアクション</param>
         public void ForEachInGroup(string groupName, Action<GameObject, T> action)
         {
             if (!_groupNameToId.TryGetValue(groupName, out int groupId))
@@ -310,14 +306,19 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectがコンテナに存在するか確認する。
         /// </summary>
-        /// <param name="obj">検索対象のGameObject</param>
-        /// <returns>存在する場合true</returns>
         public bool ContainsKey(GameObject obj)
         {
             if (obj == null)
                 return false;
-            int hashCode = obj.GetInstanceID();
-            return TryGetIndexByHash(hashCode, out _);
+            return ContainsKey(obj.GetInstanceID());
+        }
+
+        /// <summary>
+        /// 指定されたint hashがコンテナに存在するか確認する。
+        /// </summary>
+        public bool ContainsKey(int hash)
+        {
+            return TryGetIndexByHash(hash, out _);
         }
 
         /// <summary>
@@ -360,11 +361,6 @@ namespace ODC.Runtime
         // BackSwap削除ロジック
         // =============================================
 
-        /// <summary>
-        /// BackSwap方式でデータ配列から要素を削除する。
-        /// 最後尾の要素を削除位置に移動し、ハッシュテーブルを更新する。
-        /// </summary>
-        /// <param name="dataIndex">削除するデータのインデックス</param>
         private void BackSwapRemove(int dataIndex)
         {
             int removedHash = _elements[dataIndex].HashCode;
@@ -376,7 +372,6 @@ namespace ODC.Runtime
 
                 _elements[dataIndex] = _elements[lastIndex];
 
-                // 移動した要素のハッシュエントリのValueIndexを更新
                 UpdateEntryDataIndex(movedHash, dataIndex);
             }
 
@@ -389,17 +384,11 @@ namespace ODC.Runtime
         // ハッシュテーブル操作
         // =============================================
 
-        /// <summary>
-        /// ハッシュコードからバケットインデックスを計算する。
-        /// </summary>
         private int GetBucketIndex(int hashCode)
         {
             return (hashCode & 0x7FFFFFFF) % _bucketCount;
         }
 
-        /// <summary>
-        /// ハッシュテーブルに新しいエントリを登録する。
-        /// </summary>
         private void RegisterToHashTable(int hashCode, int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -424,9 +413,6 @@ namespace ODC.Runtime
             _buckets[bucketIndex] = entryIndex;
         }
 
-        /// <summary>
-        /// ハッシュテーブルからエントリを削除し、エントリインデックスを再利用可能にする。
-        /// </summary>
         private void RemoveFromHashTable(int hashCode)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -454,9 +440,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// ハッシュコードからデータインデックスを検索する。
-        /// </summary>
         private bool TryGetIndexByHash(int hashCode, out int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -476,9 +459,6 @@ namespace ODC.Runtime
             return false;
         }
 
-        /// <summary>
-        /// 指定ハッシュコードのエントリのValueIndexを更新する（BackSwap後の移動先を反映）。
-        /// </summary>
         private void UpdateEntryDataIndex(int hashCode, int newDataIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -497,9 +477,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// 容量に基づいて適切な素数バケットサイズを取得する。
-        /// </summary>
         private static int GetPrimeBucketCount(int capacity)
         {
             int target = (int)(capacity * 1.5f);

@@ -101,59 +101,62 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectをオーナーとして追加する。
         /// </summary>
-        /// <param name="obj">追加するGameObject</param>
-        /// <exception cref="ArgumentNullException">objがnullの場合</exception>
-        /// <exception cref="InvalidOperationException">オーナー数が上限に達した場合</exception>
         public void AddOwner(GameObject obj)
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            AddOwner(obj.GetInstanceID());
+            _owners[_ownerCount - 1] = obj;
+        }
+
+        /// <summary>
+        /// int hashをオーナーとして追加する。
+        /// </summary>
+        public void AddOwner(int hash)
+        {
             if (_ownerCount >= _maxOwners)
                 throw new InvalidOperationException("オーナー数が上限に達しています。");
-
-            int hashCode = obj.GetInstanceID();
-            if (TryGetIndexByHash(hashCode, out _))
-                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+            if (TryGetIndexByHash(hash, out _))
+                throw new InvalidOperationException("同じハッシュが既に登録されています。");
 
             int ownerIndex = _ownerCount;
-
-            _owners[ownerIndex] = obj;
-            _ownerData[ownerIndex] = new OwnerData { HashCode = hashCode };
+            _ownerData[ownerIndex] = new OwnerData { HashCode = hash };
             _ownerCount++;
 
-            RegisterToHashTable(hashCode, ownerIndex);
+            RegisterToHashTable(hash, ownerIndex);
         }
 
         /// <summary>
         /// GameObjectをオーナーから削除する。関連する全クールダウンも削除される。
         /// </summary>
-        /// <param name="obj">削除するGameObject</param>
-        /// <returns>削除に成功した場合true</returns>
         public bool RemoveOwner(GameObject obj)
         {
             if (obj == null)
                 return false;
+            return RemoveOwner(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// int hashをオーナーから削除する。関連する全クールダウンも削除される。
+        /// </summary>
+        public bool RemoveOwner(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return false;
 
             // このオーナーの全クールダウンを削除
-            // BackSwapで末尾要素が現在位置に移動するため、削除後にiを再チェックする
             for (int i = _cooldownCount - 1; i >= 0; i--)
             {
                 if (_cooldowns[i].OwnerIndex == ownerIndex)
                 {
                     RemoveCooldownAtIndex(i);
-                    // BackSwapで移動してきた要素も同じオーナーの可能性があるため再チェック
                     if (i < _cooldownCount && _cooldowns[i].OwnerIndex == ownerIndex)
                     {
-                        i++; // 次のループでiが再度チェックされる
+                        i++;
                     }
                 }
             }
 
-            // オーナーをBackSwap削除
             BackSwapRemoveOwner(ownerIndex);
             return true;
         }
@@ -161,14 +164,19 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectがオーナーとして登録されているか確認する。
         /// </summary>
-        /// <param name="obj">検索対象のGameObject</param>
-        /// <returns>登録されている場合true</returns>
         public bool ContainsOwner(GameObject obj)
         {
             if (obj == null)
                 return false;
-            int hashCode = obj.GetInstanceID();
-            return TryGetIndexByHash(hashCode, out _);
+            return ContainsOwner(obj.GetInstanceID());
+        }
+
+        /// <summary>
+        /// 指定されたint hashがオーナーとして登録されているか確認する。
+        /// </summary>
+        public bool ContainsOwner(int hash)
+        {
+            return TryGetIndexByHash(hash, out _);
         }
 
         // =============================================
@@ -177,34 +185,33 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 指定されたGameObjectのクールダウンを開始する。
-        /// 既にアクティブなクールダウンがある場合、タイマーをリセットする。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="cooldownName">クールダウン名</param>
-        /// <param name="duration">クールダウン時間（秒）</param>
         public void StartCooldown(GameObject obj, string cooldownName, float duration)
         {
             if (obj == null) return;
+            StartCooldown(obj.GetInstanceID(), cooldownName, duration);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定されたint hashのクールダウンを開始する。
+        /// </summary>
+        public void StartCooldown(int hash, string cooldownName, float duration)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return;
 
             int nameId = GetOrCreateNameId(cooldownName);
 
-            // 既存のクールダウンを検索
             for (int i = 0; i < _cooldownCount; i++)
             {
                 if (_cooldowns[i].OwnerIndex == ownerIndex && _cooldowns[i].CooldownNameId == nameId)
                 {
-                    // 既存のクールダウンをリセット
                     _cooldowns[i].RemainingTime = duration;
                     _cooldowns[i].TotalDuration = duration;
                     return;
                 }
             }
 
-            // 新しいクールダウンを追加
             if (_cooldownCount >= _maxCooldowns)
                 throw new InvalidOperationException("クールダウンの総数が上限に達しています。");
 
@@ -221,15 +228,18 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたクールダウンが使用可能（非アクティブ）かどうかを確認する。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="cooldownName">クールダウン名</param>
-        /// <returns>使用可能な場合true</returns>
         public bool IsCooldownReady(GameObject obj, string cooldownName)
         {
             if (obj == null) return true;
+            return IsCooldownReady(obj.GetInstanceID(), cooldownName);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定されたクールダウンが使用可能（非アクティブ）かどうかを確認する。
+        /// </summary>
+        public bool IsCooldownReady(int hash, string cooldownName)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return true;
 
             if (!_cooldownNameToId.TryGetValue(cooldownName, out int nameId))
@@ -246,15 +256,18 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたクールダウンの残り時間を取得する。使用可能な場合は0を返す。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="cooldownName">クールダウン名</param>
-        /// <returns>残り時間（秒）。使用可能な場合は0</returns>
         public float GetRemainingTime(GameObject obj, string cooldownName)
         {
             if (obj == null) return 0f;
+            return GetRemainingTime(obj.GetInstanceID(), cooldownName);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定されたクールダウンの残り時間を取得する。使用可能な場合は0を返す。
+        /// </summary>
+        public float GetRemainingTime(int hash, string cooldownName)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return 0f;
 
             if (!_cooldownNameToId.TryGetValue(cooldownName, out int nameId))
@@ -271,15 +284,18 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたクールダウンの進行比率を取得する。0は使用可能、1は開始直後を意味する。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="cooldownName">クールダウン名</param>
-        /// <returns>クールダウン比率（0..1）</returns>
         public float GetCooldownRatio(GameObject obj, string cooldownName)
         {
             if (obj == null) return 0f;
+            return GetCooldownRatio(obj.GetInstanceID(), cooldownName);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定されたクールダウンの進行比率を取得する。
+        /// </summary>
+        public float GetCooldownRatio(int hash, string cooldownName)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return 0f;
 
             if (!_cooldownNameToId.TryGetValue(cooldownName, out int nameId))
@@ -302,9 +318,7 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 全クールダウンのタイマーを更新し、完了したクールダウンを削除する。
-        /// 逆順イテレーションでBackSwap安全な削除を行う。
         /// </summary>
-        /// <param name="deltaTime">経過時間（秒）</param>
         public void Update(float deltaTime)
         {
             for (int i = _cooldownCount - 1; i >= 0; i--)
@@ -320,14 +334,18 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectのアクティブなクールダウン数を取得する。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <returns>アクティブなクールダウン数</returns>
         public int GetActiveCooldownCount(GameObject obj)
         {
             if (obj == null) return 0;
+            return GetActiveCooldownCount(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定されたint hashのアクティブなクールダウン数を取得する。
+        /// </summary>
+        public int GetActiveCooldownCount(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return 0;
 
             int count = 0;
@@ -342,13 +360,18 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectの全クールダウンをリセットする。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
         public void ResetAllCooldowns(GameObject obj)
         {
             if (obj == null) return;
+            ResetAllCooldowns(obj.GetInstanceID());
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定されたint hashの全クールダウンをリセットする。
+        /// </summary>
+        public void ResetAllCooldowns(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return;
 
             for (int i = _cooldownCount - 1; i >= 0; i--)
@@ -363,14 +386,18 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定されたGameObjectの特定のクールダウンをリセットする。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="cooldownName">リセットするクールダウン名</param>
         public void ResetCooldown(GameObject obj, string cooldownName)
         {
             if (obj == null) return;
+            ResetCooldown(obj.GetInstanceID(), cooldownName);
+        }
 
-            int hashCode = obj.GetInstanceID();
-            if (!TryGetIndexByHash(hashCode, out int ownerIndex))
+        /// <summary>
+        /// 指定されたint hashの特定のクールダウンをリセットする。
+        /// </summary>
+        public void ResetCooldown(int hash, string cooldownName)
+        {
+            if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return;
 
             if (!_cooldownNameToId.TryGetValue(cooldownName, out int nameId))
@@ -432,9 +459,6 @@ namespace ODC.Runtime
         // 内部ヘルパー
         // =============================================
 
-        /// <summary>
-        /// クールダウン名のIDを取得または作成する。
-        /// </summary>
         private int GetOrCreateNameId(string name)
         {
             if (_cooldownNameToId.TryGetValue(name, out int id))
@@ -445,10 +469,6 @@ namespace ODC.Runtime
             return id;
         }
 
-        /// <summary>
-        /// クールダウン配列からBackSwap方式で要素を削除する。
-        /// </summary>
-        /// <param name="index">削除するクールダウンのインデックス</param>
         private void RemoveCooldownAtIndex(int index)
         {
             int lastIndex = _cooldownCount - 1;
@@ -460,11 +480,6 @@ namespace ODC.Runtime
             _cooldownCount--;
         }
 
-        /// <summary>
-        /// オーナー配列からBackSwap方式で要素を削除する。
-        /// 移動されたオーナーを参照するクールダウンのOwnerIndexも更新する。
-        /// </summary>
-        /// <param name="ownerIndex">削除するオーナーのインデックス</param>
         private void BackSwapRemoveOwner(int ownerIndex)
         {
             int removedHash = _ownerData[ownerIndex].HashCode;
@@ -477,7 +492,6 @@ namespace ODC.Runtime
                 _owners[ownerIndex] = _owners[lastIndex];
                 _ownerData[ownerIndex] = _ownerData[lastIndex];
 
-                // 移動したオーナーを参照するクールダウンのOwnerIndexを更新
                 for (int i = 0; i < _cooldownCount; i++)
                 {
                     if (_cooldowns[i].OwnerIndex == lastIndex)
@@ -486,7 +500,6 @@ namespace ODC.Runtime
                     }
                 }
 
-                // ハッシュテーブルのValueIndexを更新
                 UpdateEntryDataIndex(movedHash, ownerIndex);
             }
 
@@ -500,17 +513,11 @@ namespace ODC.Runtime
         // ハッシュテーブル操作
         // =============================================
 
-        /// <summary>
-        /// ハッシュコードからバケットインデックスを計算する。
-        /// </summary>
         private int GetBucketIndex(int hashCode)
         {
             return (hashCode & 0x7FFFFFFF) % _bucketCount;
         }
 
-        /// <summary>
-        /// ハッシュテーブルに新しいエントリを登録する。
-        /// </summary>
         private void RegisterToHashTable(int hashCode, int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -535,9 +542,6 @@ namespace ODC.Runtime
             _buckets[bucketIndex] = entryIndex;
         }
 
-        /// <summary>
-        /// ハッシュテーブルからエントリを削除し、エントリインデックスを再利用可能にする。
-        /// </summary>
         private void RemoveFromHashTable(int hashCode)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -565,9 +569,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// ハッシュコードからデータインデックスを検索する。
-        /// </summary>
         private bool TryGetIndexByHash(int hashCode, out int valueIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -587,9 +588,6 @@ namespace ODC.Runtime
             return false;
         }
 
-        /// <summary>
-        /// 指定ハッシュコードのエントリのValueIndexを更新する（BackSwap後の移動先を反映）。
-        /// </summary>
         private void UpdateEntryDataIndex(int hashCode, int newDataIndex)
         {
             int bucketIndex = GetBucketIndex(hashCode);
@@ -608,9 +606,6 @@ namespace ODC.Runtime
             }
         }
 
-        /// <summary>
-        /// 容量に基づいて適切な素数バケットサイズを取得する。
-        /// </summary>
         private static int GetPrimeBucketCount(int capacity)
         {
             int target = (int)(capacity * 1.5f);
