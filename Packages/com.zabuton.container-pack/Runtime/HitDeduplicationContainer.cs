@@ -160,6 +160,20 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// 特定イベントの合計ヒット数を取得する（全ターゲット合算）。
+        /// </summary>
+        public int GetHitCount(int eventHash)
+        {
+            int total = 0;
+            for (int i = 0; i < _recordCount; i++)
+            {
+                if (_records[i].EventHash == eventHash)
+                    total += _records[i].HitCount;
+            }
+            return total;
+        }
+
+        /// <summary>
         /// コンテナの全記録をクリアする。
         /// </summary>
         public void Clear()

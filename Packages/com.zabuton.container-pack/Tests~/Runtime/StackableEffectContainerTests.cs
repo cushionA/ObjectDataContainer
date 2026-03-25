@@ -24,6 +24,7 @@ namespace ODC.Tests
         private const int Key_Poison = 1;
         private const int Key_Burn = 2;
         private const int Key_Shield = 3;
+        private const int Key_Regen = 4;
 
         [SetUp]
         public void SetUp()

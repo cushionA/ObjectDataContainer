@@ -22,7 +22,7 @@ namespace ODC.Examples
         private void Awake()
         {
             // 最大256体の敵を管理可能なコンテナを作成
-            _activeEnemies = new SparseSetContainer<EnemyStats>(capacity: 256);
+            _activeEnemies = new SparseSetContainer<EnemyStats>(maxCapacity: 256);
         }
 
         /// <summary>

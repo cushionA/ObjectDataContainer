@@ -13,7 +13,7 @@ namespace ODC.Examples
 
         private void Awake()
         {
-            _hitDedup = new HitDeduplicationContainer(capacity: 512);
+            _hitDedup = new HitDeduplicationContainer(maxRecords: 512);
         }
 
         /// <summary>

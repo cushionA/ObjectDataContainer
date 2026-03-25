@@ -26,7 +26,7 @@ namespace ODC.Examples
         {
             // 最大64キャラクター、各4スロット
             _skillSlots = new FixedSlotContainer<SkillSlotData>(
-                capacity: 64, slotCount: MaxSlots);
+                maxEntities: 64, slotCount: MaxSlots);
         }
 
         /// <summary>キャラクターを登録（全スロット空で初期化）</summary>

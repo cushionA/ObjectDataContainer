@@ -22,7 +22,7 @@ namespace ODC.Examples
         {
             // オーナー64体、エントリ256個まで
             _accumulators = new ThresholdAccumulatorContainer(
-                ownerCapacity: 64, entryCapacity: 256);
+                maxOwners: 64, maxAccumulatorsTotal: 256);
         }
 
         /// <summary>

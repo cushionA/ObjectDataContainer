@@ -28,7 +28,7 @@ namespace ODC.Examples
 
         private void Awake()
         {
-            _effects = new StackableEffectContainer<EffectData>(capacity: 128);
+            _effects = new StackableEffectContainer<EffectData>(maxOwners: 128);
         }
 
         /// <summary>キャラクターを登録</summary>

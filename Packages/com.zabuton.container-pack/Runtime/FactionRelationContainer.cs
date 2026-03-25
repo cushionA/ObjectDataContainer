@@ -124,6 +124,21 @@ namespace ODC.Runtime
             ValidateFaction(factionB);
             if (factionA == factionB) return;
 
+            // 既存の一時関係を検索（二重適用でオリジナルを失わないようにする）
+            for (int i = 0; i < _tempCount; i++)
+            {
+                ref var existing = ref _tempRelations[i];
+                if ((existing.FactionA == factionA && existing.FactionB == factionB) ||
+                    (existing.FactionA == factionB && existing.FactionB == factionA))
+                {
+                    // 既存エントリを更新（OriginalAB/BAは保持）
+                    existing.RemainingTime = duration;
+                    _relations[factionA * MaxFactions + factionB] = relation;
+                    _relations[factionB * MaxFactions + factionA] = relation;
+                    return;
+                }
+            }
+
             if (_tempCount >= _maxTempRelations)
                 throw new InvalidOperationException("一時関係数が上限に達しています。");
 

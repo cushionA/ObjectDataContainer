@@ -28,7 +28,7 @@ namespace ODC.Examples
 
         private void Awake()
         {
-            _statusFlags = new BitFlagTableContainer(capacity: 256);
+            _statusFlags = new BitFlagTableContainer(maxCapacity: 256);
         }
 
         /// <summary>キャラクターを登録</summary>

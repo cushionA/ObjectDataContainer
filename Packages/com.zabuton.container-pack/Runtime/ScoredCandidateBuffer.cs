@@ -258,8 +258,9 @@ namespace ODC.Runtime
             if (resultCount == 0) return 0;
 
             // 簡易ソート（候補数は少ないのでSelection Sort）
-            Span<int> indices = stackalloc int[count];
-            Span<bool> used = stackalloc bool[count];
+            // maxCandidatesPerOwnerはコンストラクタで制限されるため通常は小さい値だが、念のためガード
+            Span<int> indices = count <= 256 ? stackalloc int[count] : new int[count];
+            Span<bool> used = count <= 256 ? stackalloc bool[count] : new bool[count];
             for (int i = 0; i < count; i++)
             {
                 indices[i] = i;

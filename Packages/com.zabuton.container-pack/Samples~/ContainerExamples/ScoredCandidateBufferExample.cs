@@ -26,7 +26,7 @@ namespace ODC.Examples
         {
             // 最大32体のAI、各AIが最大8候補まで保持
             _targetBuffer = new ScoredCandidateBuffer<TargetCandidate>(
-                ownerCapacity: 32, maxCandidatesPerOwner: 8);
+                maxOwners: 32, maxCandidatesPerOwner: 8);
         }
 
         /// <summary>AIエージェントを登録</summary>

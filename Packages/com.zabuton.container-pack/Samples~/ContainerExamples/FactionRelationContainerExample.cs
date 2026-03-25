@@ -29,11 +29,11 @@ namespace ODC.Examples
             _merchantFaction = _factions.RegisterFaction();
 
             // 初期関係を設定（Setは対称: A→BもB→Aも同時に設定される）
-            _factions.Set(_playerFaction, _goblinFaction, Relation.Hostile);
-            _factions.Set(_playerFaction, _undeadFaction, Relation.Hostile);
-            _factions.Set(_playerFaction, _merchantFaction, Relation.Allied);
-            _factions.Set(_goblinFaction, _undeadFaction, Relation.Neutral);
-            _factions.Set(_goblinFaction, _merchantFaction, Relation.Hostile);
+            _factions.Set(_playerFaction, _goblinFaction, FactionRelationContainer.Relation.Hostile);
+            _factions.Set(_playerFaction, _undeadFaction, FactionRelationContainer.Relation.Hostile);
+            _factions.Set(_playerFaction, _merchantFaction, FactionRelationContainer.Relation.Allied);
+            _factions.Set(_goblinFaction, _undeadFaction, FactionRelationContainer.Relation.Neutral);
+            _factions.Set(_goblinFaction, _merchantFaction, FactionRelationContainer.Relation.Hostile);
         }
 
         /// <summary>
@@ -41,7 +41,7 @@ namespace ODC.Examples
         /// </summary>
         public bool ShouldAttack(int attackerFaction, int targetFaction)
         {
-            return _factions.Get(attackerFaction, targetFaction) == Relation.Hostile;
+            return _factions.Get(attackerFaction, targetFaction) == FactionRelationContainer.Relation.Hostile;
         }
 
         /// <summary>
@@ -67,7 +67,7 @@ namespace ODC.Examples
         public void FormTemporaryAlliance(int factionA, int factionB, float duration)
         {
             // 例: ゴブリンと一時同盟（30秒間）
-            _factions.SetTemporary(factionA, factionB, Relation.Allied, duration);
+            _factions.SetTemporary(factionA, factionB, FactionRelationContainer.Relation.Allied, duration);
             Debug.Log($"勢力{factionA}と{factionB}が{duration}秒間の一時同盟を締結");
         }
 
@@ -77,7 +77,7 @@ namespace ODC.Examples
         /// </summary>
         public void SetOneWayNeutral()
         {
-            _factions.SetOneWay(_goblinFaction, _playerFaction, Relation.Neutral);
+            _factions.SetOneWay(_goblinFaction, _playerFaction, FactionRelationContainer.Relation.Neutral);
         }
 
         private void Update()
