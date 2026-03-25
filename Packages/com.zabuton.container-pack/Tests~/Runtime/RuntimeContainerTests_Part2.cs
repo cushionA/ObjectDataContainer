@@ -887,6 +887,139 @@ namespace ODC.Tests
             Assert.AreEqual(TestState.Attacking, current);
             Assert.AreEqual(TestState.Running, previous);
         }
+
+        #region StateMapContainer - OnEnter/OnExit コールバック
+
+        [Test]
+        public void RegisterCallback_OnEnter_FiresOnStateTransition()
+        {
+            bool entered = false;
+            TestState fromState = default;
+
+            _container.RegisterCallback(TestState.Walking,
+                onEnter: (obj, from) => { entered = true; fromState = from; });
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Walking);
+
+            Assert.IsTrue(entered);
+            Assert.AreEqual(TestState.Idle, fromState);
+        }
+
+        [Test]
+        public void RegisterCallback_OnExit_FiresOnStateTransition()
+        {
+            bool exited = false;
+            TestState toState = default;
+
+            _container.RegisterCallback(TestState.Idle,
+                onExit: (obj, to) => { exited = true; toState = to; });
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Walking);
+
+            Assert.IsTrue(exited);
+            Assert.AreEqual(TestState.Walking, toState);
+        }
+
+        [Test]
+        public void RegisterCallback_OnExitThenOnEnter_FiresInOrder()
+        {
+            var callOrder = new System.Collections.Generic.List<string>();
+
+            _container.RegisterCallback(TestState.Idle,
+                onExit: (obj, to) => callOrder.Add("exit_idle"));
+            _container.RegisterCallback(TestState.Walking,
+                onEnter: (obj, from) => callOrder.Add("enter_walking"));
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Walking);
+
+            Assert.AreEqual(2, callOrder.Count);
+            Assert.AreEqual("exit_idle", callOrder[0]);
+            Assert.AreEqual("enter_walking", callOrder[1]);
+        }
+
+        [Test]
+        public void RegisterCallback_SameState_NoCallback()
+        {
+            bool called = false;
+            _container.RegisterCallback(TestState.Idle,
+                onEnter: (obj, from) => called = true,
+                onExit: (obj, to) => called = true);
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Idle); // 同じステート
+
+            Assert.IsFalse(called);
+        }
+
+        [Test]
+        public void RegisterCallback_Overwrite_UsesLatest()
+        {
+            int callCount = 0;
+
+            _container.RegisterCallback(TestState.Walking,
+                onEnter: (obj, from) => callCount += 100);
+
+            // 上書き
+            _container.RegisterCallback(TestState.Walking,
+                onEnter: (obj, from) => callCount += 1);
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Walking);
+
+            Assert.AreEqual(1, callCount); // 上書き後のコールバックのみ
+        }
+
+        [Test]
+        public void UnregisterCallback_StopsCallbacks()
+        {
+            bool called = false;
+            _container.RegisterCallback(TestState.Walking,
+                onEnter: (obj, from) => called = true);
+
+            _container.UnregisterCallback(TestState.Walking);
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Walking);
+
+            Assert.IsFalse(called);
+        }
+
+        [Test]
+        public void RegisterCallback_ReceivesCorrectGameObject()
+        {
+            GameObject received = null;
+            _container.RegisterCallback(TestState.Attacking,
+                onEnter: (obj, from) => received = obj);
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Attacking);
+
+            Assert.AreEqual(_gameObjects[0], received);
+        }
+
+        [Test]
+        public void RegisterCallback_MultipleTransitions_FiresEachTime()
+        {
+            int enterCount = 0;
+            int exitCount = 0;
+
+            _container.RegisterCallback(TestState.Walking,
+                onEnter: (obj, from) => enterCount++,
+                onExit: (obj, to) => exitCount++);
+
+            _container.Add(_gameObjects[0], TestState.Idle);
+            _container.SetState(_gameObjects[0], TestState.Walking);  // enter
+            _container.SetState(_gameObjects[0], TestState.Running);  // exit
+            _container.SetState(_gameObjects[0], TestState.Walking);  // enter again
+
+            Assert.AreEqual(2, enterCount);
+            Assert.AreEqual(1, exitCount);
+        }
+
+        #endregion
     }
 
     #endregion

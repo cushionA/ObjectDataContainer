@@ -824,5 +824,157 @@ namespace ODC.Tests
         }
 
         #endregion
+
+        #region RingBufferContainer - CopyTo
+
+        [Test]
+        public void RingBuffer_CopyTo_NoWrap_CopiesInOrder()
+        {
+            var buffer = new RingBufferContainer<int>(5);
+            buffer.Push(10);
+            buffer.Push(20);
+            buffer.Push(30);
+
+            var dest = new int[3];
+            int count = buffer.CopyTo(dest);
+
+            Assert.AreEqual(3, count);
+            Assert.AreEqual(10, dest[0]);
+            Assert.AreEqual(20, dest[1]);
+            Assert.AreEqual(30, dest[2]);
+        }
+
+        [Test]
+        public void RingBuffer_CopyTo_WithWrap_CopiesChronologically()
+        {
+            var buffer = new RingBufferContainer<int>(3);
+            buffer.Push(1);
+            buffer.Push(2);
+            buffer.Push(3);
+            buffer.Push(4); // 上書き: [4, 2, 3] → 論理順: 2, 3, 4
+
+            var dest = new int[3];
+            buffer.CopyTo(dest);
+
+            Assert.AreEqual(2, dest[0]);
+            Assert.AreEqual(3, dest[1]);
+            Assert.AreEqual(4, dest[2]);
+        }
+
+        [Test]
+        public void RingBuffer_CopyTo_Empty_ReturnsZero()
+        {
+            var buffer = new RingBufferContainer<int>(5);
+            var dest = new int[5];
+
+            int count = buffer.CopyTo(dest);
+
+            Assert.AreEqual(0, count);
+        }
+
+        [Test]
+        public void RingBuffer_CopyTo_ThrowsWhenDestinationTooSmall()
+        {
+            var buffer = new RingBufferContainer<int>(5);
+            buffer.Push(1);
+            buffer.Push(2);
+            buffer.Push(3);
+
+            var dest = new int[2];
+            Assert.Throws<System.ArgumentException>(() => buffer.CopyTo(dest));
+        }
+
+        [Test]
+        public void RingBuffer_CopyTo_FullWrapAround()
+        {
+            // 完全に一周以上ラップするケース
+            var buffer = new RingBufferContainer<int>(3);
+            for (int i = 1; i <= 7; i++) buffer.Push(i);
+            // 最終状態: 5, 6, 7
+
+            var dest = new int[3];
+            buffer.CopyTo(dest);
+
+            Assert.AreEqual(5, dest[0]);
+            Assert.AreEqual(6, dest[1]);
+            Assert.AreEqual(7, dest[2]);
+        }
+
+        #endregion
+
+        #region RingBufferContainer - AsSpans
+
+        [Test]
+        public void RingBuffer_AsSpans_NoWrap_FirstOnly()
+        {
+            var buffer = new RingBufferContainer<int>(5);
+            buffer.Push(10);
+            buffer.Push(20);
+            buffer.Push(30);
+
+            buffer.AsSpans(out var first, out var second);
+
+            Assert.AreEqual(3, first.Length);
+            Assert.AreEqual(0, second.Length);
+            Assert.AreEqual(10, first[0]);
+            Assert.AreEqual(20, first[1]);
+            Assert.AreEqual(30, first[2]);
+        }
+
+        [Test]
+        public void RingBuffer_AsSpans_WithWrap_TwoSegments()
+        {
+            var buffer = new RingBufferContainer<int>(3);
+            buffer.Push(1);
+            buffer.Push(2);
+            buffer.Push(3);
+            buffer.Push(4); // head=1, 論理: [2, 3, 4], 物理: [4, 2, 3]
+
+            buffer.AsSpans(out var first, out var second);
+
+            // first = [2, 3] (index 1..2), second = [4] (index 0)
+            Assert.AreEqual(2, first.Length);
+            Assert.AreEqual(1, second.Length);
+            Assert.AreEqual(2, first[0]);
+            Assert.AreEqual(3, first[1]);
+            Assert.AreEqual(4, second[0]);
+        }
+
+        [Test]
+        public void RingBuffer_AsSpans_Empty_BothEmpty()
+        {
+            var buffer = new RingBufferContainer<int>(5);
+
+            buffer.AsSpans(out var first, out var second);
+
+            Assert.AreEqual(0, first.Length);
+            Assert.AreEqual(0, second.Length);
+        }
+
+        [Test]
+        public void RingBuffer_AsSpans_ConsistentWithCopyTo()
+        {
+            // AsSpansとCopyToが同じ順序を返すことを検証
+            var buffer = new RingBufferContainer<int>(4);
+            for (int i = 0; i < 7; i++) buffer.Push(i * 10);
+
+            // CopyToで取得
+            var copied = new int[buffer.Count];
+            buffer.CopyTo(copied);
+
+            // AsSpansで取得
+            buffer.AsSpans(out var first, out var second);
+            var fromSpans = new int[first.Length + second.Length];
+            first.CopyTo(fromSpans);
+            second.CopyTo(fromSpans.AsSpan(first.Length));
+
+            Assert.AreEqual(copied.Length, fromSpans.Length);
+            for (int i = 0; i < copied.Length; i++)
+            {
+                Assert.AreEqual(copied[i], fromSpans[i], $"Index {i} mismatch");
+            }
+        }
+
+        #endregion
     }
 }

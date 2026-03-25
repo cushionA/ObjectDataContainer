@@ -22,10 +22,24 @@ namespace ODC.Runtime
             public int HashCode;
         }
 
+        /// <summary>
+        /// ステート遷移時のコールバック情報。
+        /// </summary>
+        private struct StateCallback
+        {
+            public TState State;
+            public Action<GameObject, TState> OnEnter;  // (obj, fromState)
+            public Action<GameObject, TState> OnExit;   // (obj, toState)
+        }
+
         private StateEntry[] _states;
         private GameObject[] _gameObjects;
         private int _activeCount;
         private int _maxCapacity;
+
+        // ステートごとのコールバック登録（少数のステートを想定）
+        private StateCallback[] _callbacks;
+        private int _callbackCount;
 
         // ハッシュテーブル（他のコンテナと同じパターン）
         private int[] _buckets;
@@ -63,6 +77,9 @@ namespace ODC.Runtime
             _hashEntries = new HashTableEntry[maxCapacity];
             _hashEntryCount = 0;
             _freeHashEntries = new Stack<int>();
+
+            _callbacks = new StateCallback[8]; // 初期8ステート分
+            _callbackCount = 0;
         }
 
         /// <summary>
@@ -133,7 +150,63 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// 特定のステートに対するOnEnter/OnExitコールバックを登録する。
+        /// AI FSMのステート遷移フック等に使用する。
+        /// </summary>
+        /// <param name="state">対象のステート</param>
+        /// <param name="onEnter">このステートに遷移した時のコールバック。引数は (obj, fromState)。nullで省略可。</param>
+        /// <param name="onExit">このステートから離脱した時のコールバック。引数は (obj, toState)。nullで省略可。</param>
+        public void RegisterCallback(TState state, Action<GameObject, TState> onEnter = null, Action<GameObject, TState> onExit = null)
+        {
+            var comparer = EqualityComparer<TState>.Default;
+
+            // 既存エントリを上書き
+            for (int i = 0; i < _callbackCount; i++)
+            {
+                if (comparer.Equals(_callbacks[i].State, state))
+                {
+                    _callbacks[i].OnEnter = onEnter;
+                    _callbacks[i].OnExit = onExit;
+                    return;
+                }
+            }
+
+            // 新規追加
+            if (_callbackCount >= _callbacks.Length)
+                Array.Resize(ref _callbacks, _callbacks.Length * 2);
+
+            _callbacks[_callbackCount++] = new StateCallback
+            {
+                State = state,
+                OnEnter = onEnter,
+                OnExit = onExit
+            };
+        }
+
+        /// <summary>
+        /// 特定のステートのコールバック登録を解除する。
+        /// </summary>
+        /// <param name="state">対象のステート</param>
+        public void UnregisterCallback(TState state)
+        {
+            var comparer = EqualityComparer<TState>.Default;
+            for (int i = 0; i < _callbackCount; i++)
+            {
+                if (comparer.Equals(_callbacks[i].State, state))
+                {
+                    // BackSwap削除
+                    _callbackCount--;
+                    if (i < _callbackCount)
+                        _callbacks[i] = _callbacks[_callbackCount];
+                    _callbacks[_callbackCount] = default;
+                    return;
+                }
+            }
+        }
+
+        /// <summary>
         /// ステートを遷移させる。同じステートの場合は何もしない。
+        /// コールバックが登録されている場合、旧ステートのOnExit → 新ステートのOnEnterの順で発火する。
         /// </summary>
         /// <param name="obj">対象のGameObject</param>
         /// <param name="newState">新しいステート</param>
@@ -148,9 +221,16 @@ namespace ODC.Runtime
                 ref var entry = ref _states[index];
                 if (!EqualityComparer<TState>.Default.Equals(entry.CurrentState, newState))
                 {
-                    entry.PreviousState = entry.CurrentState;
+                    TState oldState = entry.CurrentState;
+                    entry.PreviousState = oldState;
                     entry.CurrentState = newState;
                     entry.StateElapsedTime = 0f;
+
+                    // コールバック発火（OnExit → OnEnter）
+                    if (_callbackCount > 0)
+                    {
+                        FireCallbacks(obj, oldState, newState);
+                    }
                 }
                 return true;
             }
@@ -309,6 +389,35 @@ namespace ODC.Runtime
             _gameObjects = null;
             _buckets = null;
             _hashEntries = null;
+            _callbacks = null;
+            _callbackCount = 0;
+        }
+
+        // ===== コールバック発火 =====
+
+        private void FireCallbacks(GameObject obj, TState oldState, TState newState)
+        {
+            var comparer = EqualityComparer<TState>.Default;
+
+            // oldStateのOnExit
+            for (int i = 0; i < _callbackCount; i++)
+            {
+                if (comparer.Equals(_callbacks[i].State, oldState))
+                {
+                    _callbacks[i].OnExit?.Invoke(obj, newState);
+                    break;
+                }
+            }
+
+            // newStateのOnEnter
+            for (int i = 0; i < _callbackCount; i++)
+            {
+                if (comparer.Equals(_callbacks[i].State, newState))
+                {
+                    _callbacks[i].OnEnter?.Invoke(obj, oldState);
+                    break;
+                }
+            }
         }
 
         // ===== ハッシュテーブル操作 =====
