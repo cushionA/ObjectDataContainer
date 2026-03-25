@@ -181,6 +181,29 @@ namespace ODC.Tests
             container.Dispose();
         }
 
+        [Test]
+        public void GetAtCursorRef_MutatesInPlace()
+        {
+            var container = new FixedSlotContainer<SlotData>(16, 3);
+            container.Add(100);
+            container.SetSlot(100, 0, new SlotData(10, 0f));
+            container.SetSlot(100, 1, new SlotData(20, 0f));
+
+            // カーソル位置(0)のスロットをref経由で変更
+            ref SlotData cursorSlot = ref container.GetAtCursorRef(100);
+            cursorSlot.Value = 777f;
+
+            Assert.AreEqual(777f, container.GetAtCursor(100).Value);
+
+            // カーソルを進めて別スロットもref変更
+            container.RotateCursor(100);
+            ref SlotData nextSlot = ref container.GetAtCursorRef(100);
+            nextSlot.Value = 888f;
+
+            Assert.AreEqual(888f, container.GetAtCursor(100).Value);
+            container.Dispose();
+        }
+
         #endregion
 
         #region SwapSlots
