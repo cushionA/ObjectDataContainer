@@ -346,6 +346,7 @@ namespace ODC.Runtime
         /// <summary>
         /// 全エンティティを一括Tick。
         /// 期限切れスロットを自動解放し、TickInterval到達時にonTickを呼ぶ。
+        /// コールバック内でこのコンテナのApply/Removeを呼ばないこと（走査中の配列変更で不整合になる）。
         /// </summary>
         public void TickAll(float deltaTime,
             TickCallback onTick = null,

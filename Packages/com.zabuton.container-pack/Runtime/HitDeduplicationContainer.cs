@@ -161,6 +161,7 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 特定イベントの合計ヒット数を取得する（全ターゲット合算）。
+        /// O(N)の線形走査のため、大量レコード時にフレーム毎の呼び出しは避けること。
         /// </summary>
         public int GetHitCount(int eventHash)
         {

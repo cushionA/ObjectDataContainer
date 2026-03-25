@@ -113,6 +113,8 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 一時的な関係上書き（混乱魔法用）。指定秒数後にTickで元に戻る。
+        /// 双方向（A→B, B→A）を同時に上書きする。SetOneWayで非対称関係を設定していた場合も
+        /// 両方向が同じ関係に上書きされる点に注意。期限切れ時は元の非対称関係に正しく復元される。
         /// </summary>
         /// <param name="factionA">陣営A ID</param>
         /// <param name="factionB">陣営B ID</param>
