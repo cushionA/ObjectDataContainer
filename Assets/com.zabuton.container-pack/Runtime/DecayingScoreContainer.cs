@@ -5,21 +5,20 @@ using UnityEngine;
 namespace ODC.Runtime
 {
     /// <summary>
-    /// 蓄積値が閾値に達したらトリガーを発火するコンテナ。
-    /// 複数のキー（ラベル）を1オブジェクトに持てる（EXP・HP蓄積・スタミナ蓄積等）。
-    /// objectHash x key で O(1) アクセス。
+    /// 累積スコア + 時間指数減衰 + 最大値クエリを提供するコンテナ。
+    /// DamageScoreTrackerパターン等で使用。固定容量、GCフリー、遅延減衰評価。
     /// </summary>
-    public class ThresholdAccumulatorContainer : IDisposable
+    public class DecayingScoreContainer : IDisposable
     {
         /// <summary>
-        /// アキュムレータエントリ構造体。
+        /// スコアエントリ構造体。
         /// </summary>
-        private struct AccumulatorEntry
+        private struct ScoreEntry
         {
             public int OwnerIndex;
-            public int KeyId;
-            public float CurrentValue;
-            public float Threshold;
+            public int TargetHash;
+            public float RawScore;
+            public float LastUpdateTime;
         }
 
         /// <summary>
@@ -43,14 +42,15 @@ namespace ODC.Runtime
         /// <summary>バケットサイズ決定用の素数テーブル</summary>
         private static readonly int[] Primes = { 7, 17, 37, 79, 163, 331, 673, 1361, 2729, 5471, 10949, 15497 };
 
-        private GameObject[] _owners;
         private OwnerData[] _ownerData;
         private int _ownerCount;
         private int _maxOwners;
 
-        private AccumulatorEntry[] _accumulators;
-        private int _accumulatorCount;
-        private int _maxAccumulators;
+        private ScoreEntry[] _scores;
+        private int _scoreCount;
+        private int _maxScores;
+
+        private float _decayRate;
 
         // ハッシュテーブル（オーナールックアップ用）
         private int[] _buckets;
@@ -62,24 +62,27 @@ namespace ODC.Runtime
         /// <summary>現在のオーナー数</summary>
         public int OwnerCount => _ownerCount;
 
-        /// <summary>現在のアキュムレータ総数</summary>
-        public int AccumulatorCount => _accumulatorCount;
+        /// <summary>現在のスコアエントリ総数</summary>
+        public int ScoreCount => _scoreCount;
 
         /// <summary>
         /// コンストラクタ。
         /// </summary>
-        public ThresholdAccumulatorContainer(int maxOwners, int maxAccumulatorsTotal = -1)
+        /// <param name="maxOwners">最大オーナー数</param>
+        /// <param name="maxEntriesPerOwner">オーナーあたりの最大エントリ数（総容量 = maxOwners * maxEntriesPerOwner）</param>
+        /// <param name="decayRate">指数減衰率（1秒あたりの減衰率。例: 0.5 = 1秒で半減）</param>
+        public DecayingScoreContainer(int maxOwners, int maxEntriesPerOwner, float decayRate)
         {
             _maxOwners = maxOwners;
-            _maxAccumulators = maxAccumulatorsTotal > 0 ? maxAccumulatorsTotal : maxOwners * 4;
+            _maxScores = maxOwners * maxEntriesPerOwner;
+            _decayRate = decayRate;
             _bucketCount = GetPrimeBucketCount(maxOwners);
 
-            _owners = new GameObject[maxOwners];
             _ownerData = new OwnerData[maxOwners];
             _ownerCount = 0;
 
-            _accumulators = new AccumulatorEntry[_maxAccumulators];
-            _accumulatorCount = 0;
+            _scores = new ScoreEntry[_maxScores];
+            _scoreCount = 0;
 
             _buckets = new int[_bucketCount];
             _hashEntries = new HashEntry[maxOwners];
@@ -102,7 +105,6 @@ namespace ODC.Runtime
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
             AddOwner(obj.GetInstanceID());
-            _owners[_ownerCount - 1] = obj;
         }
 
         /// <summary>
@@ -123,28 +125,27 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// GameObjectをオーナーから削除する。関連する全アキュムレータも削除される。
+        /// オーナーを削除する。関連する全スコアも削除される。
         /// </summary>
         public bool RemoveOwner(GameObject obj)
         {
-            if (obj == null)
-                return false;
+            if (obj == null) return false;
             return RemoveOwner(obj.GetInstanceID());
         }
 
         /// <summary>
-        /// int hashをオーナーから削除する。関連する全アキュムレータも削除される。
+        /// オーナーを削除する。関連する全スコアも削除される。
         /// </summary>
         public bool RemoveOwner(int hash)
         {
             if (!TryGetIndexByHash(hash, out int ownerIndex))
                 return false;
 
-            for (int i = _accumulatorCount - 1; i >= 0; i--)
+            for (int i = _scoreCount - 1; i >= 0; i--)
             {
-                if (_accumulators[i].OwnerIndex == ownerIndex)
+                if (_scores[i].OwnerIndex == ownerIndex)
                 {
-                    RemoveAccumulatorAtIndex(i);
+                    RemoveScoreAtIndex(i);
                 }
             }
 
@@ -152,212 +153,189 @@ namespace ODC.Runtime
             return true;
         }
 
-        /// <summary>
-        /// 指定されたGameObjectがオーナーとして登録されているか確認する。
-        /// </summary>
-        public bool ContainsOwner(GameObject obj)
-        {
-            if (obj == null)
-                return false;
-            return ContainsOwner(obj.GetInstanceID());
-        }
-
-        /// <summary>
-        /// 指定されたint hashがオーナーとして登録されているか確認する。
-        /// </summary>
-        public bool ContainsOwner(int hash)
-        {
-            return TryGetIndexByHash(hash, out _);
-        }
-
         // =============================================
-        // アキュムレータ操作
+        // スコア操作
         // =============================================
 
         /// <summary>
-        /// アキュムレータを登録する（GameObject版）。
+        /// スコアを加算する。既存エントリがある場合は減衰後の値に加算する。
         /// </summary>
-        public void Register(GameObject obj, int key, float threshold)
+        /// <param name="ownerHash">オーナーのハッシュ</param>
+        /// <param name="targetHash">ターゲットのハッシュ</param>
+        /// <param name="score">加算するスコア</param>
+        /// <param name="currentTime">現在時刻（Time.time等）</param>
+        public void AddScore(int ownerHash, int targetHash, float score, float currentTime)
         {
-            if (obj == null)
-                throw new ArgumentNullException(nameof(obj));
-            Register(obj.GetInstanceID(), key, threshold);
-        }
+            if (!TryGetIndexByHash(ownerHash, out int ownerIndex))
+                return;
 
-        /// <summary>
-        /// アキュムレータを登録する（int hash版）。
-        /// </summary>
-        public void Register(int hash, int key, float threshold)
-        {
-            if (!TryGetIndexByHash(hash, out int ownerIndex))
-                throw new InvalidOperationException("オーナーが登録されていません。");
-
-            for (int i = 0; i < _accumulatorCount; i++)
+            // 既存のエントリを検索
+            for (int i = 0; i < _scoreCount; i++)
             {
-                if (_accumulators[i].OwnerIndex == ownerIndex && _accumulators[i].KeyId == key)
+                if (_scores[i].OwnerIndex == ownerIndex && _scores[i].TargetHash == targetHash)
                 {
-                    _accumulators[i].Threshold = threshold;
+                    // 減衰後の値に加算
+                    float decayed = GetDecayedScore(ref _scores[i], currentTime);
+                    _scores[i].RawScore = decayed + score;
+                    _scores[i].LastUpdateTime = currentTime;
                     return;
                 }
             }
 
-            if (_accumulatorCount >= _maxAccumulators)
-                throw new InvalidOperationException("アキュムレータの総数が上限に達しています。");
+            // 新規追加
+            if (_scoreCount >= _maxScores)
+                return; // 満杯の場合は無視
 
-            _accumulators[_accumulatorCount] = new AccumulatorEntry
+            _scores[_scoreCount] = new ScoreEntry
             {
                 OwnerIndex = ownerIndex,
-                KeyId = key,
-                CurrentValue = 0f,
-                Threshold = threshold
+                TargetHash = targetHash,
+                RawScore = score,
+                LastUpdateTime = currentTime
             };
-            _accumulatorCount++;
+            _scoreCount++;
         }
 
         /// <summary>
-        /// 蓄積値を加算する（GameObject版）。
+        /// 指定ターゲットの現在のスコアを取得する（減衰適用済み）。
         /// </summary>
-        public bool Add(GameObject obj, int key, float amount, bool carryOverflow = false)
+        public float GetScore(int ownerHash, int targetHash, float currentTime)
         {
-            if (obj == null) return false;
-            return Add(obj.GetInstanceID(), key, amount, carryOverflow);
-        }
+            if (!TryGetIndexByHash(ownerHash, out int ownerIndex))
+                return 0f;
 
-        /// <summary>
-        /// 蓄積値を加算する（int hash版）。閾値超過時はtrueを返す。
-        /// </summary>
-        public bool Add(int hash, int key, float amount, bool carryOverflow = false)
-        {
-            if (!TryGetIndexByHash(hash, out int ownerIndex))
-                return false;
-
-            for (int i = 0; i < _accumulatorCount; i++)
+            for (int i = 0; i < _scoreCount; i++)
             {
-                if (_accumulators[i].OwnerIndex == ownerIndex && _accumulators[i].KeyId == key)
+                if (_scores[i].OwnerIndex == ownerIndex && _scores[i].TargetHash == targetHash)
                 {
-                    _accumulators[i].CurrentValue += amount;
+                    return GetDecayedScore(ref _scores[i], currentTime);
+                }
+            }
+            return 0f;
+        }
 
-                    if (_accumulators[i].Threshold > 0f && _accumulators[i].CurrentValue >= _accumulators[i].Threshold)
+        /// <summary>
+        /// 最高スコアのターゲットハッシュを返す。
+        /// </summary>
+        /// <param name="ownerHash">オーナーのハッシュ</param>
+        /// <param name="currentTime">現在時刻</param>
+        /// <returns>最高スコアのターゲットハッシュ。エントリがない場合は0</returns>
+        public int GetHighest(int ownerHash, float currentTime)
+        {
+            if (!TryGetIndexByHash(ownerHash, out int ownerIndex))
+                return 0;
+
+            float bestScore = float.MinValue;
+            int bestTarget = 0;
+
+            for (int i = 0; i < _scoreCount; i++)
+            {
+                if (_scores[i].OwnerIndex == ownerIndex)
+                {
+                    float s = GetDecayedScore(ref _scores[i], currentTime);
+                    if (s > bestScore)
                     {
-                        if (carryOverflow)
-                        {
-                            _accumulators[i].CurrentValue -= _accumulators[i].Threshold;
-                        }
-                        else
-                        {
-                            _accumulators[i].CurrentValue = 0f;
-                        }
-                        return true;
+                        bestScore = s;
+                        bestTarget = _scores[i].TargetHash;
                     }
-                    return false;
                 }
             }
-            return false;
+
+            return bestTarget;
         }
 
         /// <summary>
-        /// 現在の蓄積値を取得（GameObject版）。
+        /// 上位Kのターゲットハッシュとスコアを返す。
         /// </summary>
-        public float Get(GameObject obj, int key)
+        /// <param name="ownerHash">オーナーのハッシュ</param>
+        /// <param name="currentTime">現在時刻</param>
+        /// <param name="results">ターゲットハッシュの出力Span</param>
+        /// <param name="scores">スコアの出力Span</param>
+        /// <returns>書き込まれた要素数</returns>
+        public int GetTopK(int ownerHash, float currentTime, Span<int> results, Span<float> scores)
         {
-            if (obj == null) return 0f;
-            return Get(obj.GetInstanceID(), key);
-        }
+            if (!TryGetIndexByHash(ownerHash, out int ownerIndex))
+                return 0;
 
-        /// <summary>
-        /// 現在の蓄積値を取得（int hash版）。
-        /// </summary>
-        public float Get(int hash, int key)
-        {
-            if (!TryGetIndexByHash(hash, out int ownerIndex))
-                return 0f;
+            int maxK = Math.Min(results.Length, scores.Length);
+            int count = 0;
 
-            for (int i = 0; i < _accumulatorCount; i++)
+            // まずこのオーナーの全エントリを収集
+            for (int i = 0; i < _scoreCount; i++)
             {
-                if (_accumulators[i].OwnerIndex == ownerIndex && _accumulators[i].KeyId == key)
-                    return _accumulators[i].CurrentValue;
-            }
-            return 0f;
-        }
-
-        /// <summary>
-        /// 進行率 (0.0〜1.0) を取得（GameObject版）。
-        /// </summary>
-        public float GetNormalized(GameObject obj, int key)
-        {
-            if (obj == null) return 0f;
-            return GetNormalized(obj.GetInstanceID(), key);
-        }
-
-        /// <summary>
-        /// 進行率 (0.0〜1.0) を取得（int hash版）。
-        /// </summary>
-        public float GetNormalized(int hash, int key)
-        {
-            if (!TryGetIndexByHash(hash, out int ownerIndex))
-                return 0f;
-
-            for (int i = 0; i < _accumulatorCount; i++)
-            {
-                if (_accumulators[i].OwnerIndex == ownerIndex && _accumulators[i].KeyId == key)
+                if (_scores[i].OwnerIndex == ownerIndex)
                 {
-                    if (_accumulators[i].Threshold <= 0f) return 0f;
-                    float ratio = _accumulators[i].CurrentValue / _accumulators[i].Threshold;
-                    return ratio > 1f ? 1f : ratio;
+                    float s = GetDecayedScore(ref _scores[i], currentTime);
+                    if (s <= 0f) continue;
+
+                    if (count < maxK)
+                    {
+                        // 挿入ソート（k が小さい前提なのでO(nk)で十分）
+                        int insertAt = count;
+                        for (int j = 0; j < count; j++)
+                        {
+                            if (s > scores[j])
+                            {
+                                insertAt = j;
+                                break;
+                            }
+                        }
+
+                        // 後ろにシフト
+                        for (int j = count; j > insertAt; j--)
+                        {
+                            if (j < maxK)
+                            {
+                                results[j] = results[j - 1];
+                                scores[j] = scores[j - 1];
+                            }
+                        }
+
+                        results[insertAt] = _scores[i].TargetHash;
+                        scores[insertAt] = s;
+                        count++;
+                    }
+                    else if (s > scores[maxK - 1])
+                    {
+                        // 最下位より大きければ挿入
+                        int insertAt = maxK - 1;
+                        for (int j = 0; j < maxK - 1; j++)
+                        {
+                            if (s > scores[j])
+                            {
+                                insertAt = j;
+                                break;
+                            }
+                        }
+
+                        for (int j = maxK - 1; j > insertAt; j--)
+                        {
+                            results[j] = results[j - 1];
+                            scores[j] = scores[j - 1];
+                        }
+
+                        results[insertAt] = _scores[i].TargetHash;
+                        scores[insertAt] = s;
+                    }
                 }
             }
-            return 0f;
+
+            return Math.Min(count, maxK);
         }
 
         /// <summary>
-        /// 閾値を変更する（GameObject版）。
+        /// 特定のターゲットエントリを削除する。
         /// </summary>
-        public void SetThreshold(GameObject obj, int key, float threshold)
+        public void RemoveTarget(int ownerHash, int targetHash)
         {
-            if (obj == null) return;
-            SetThreshold(obj.GetInstanceID(), key, threshold);
-        }
-
-        /// <summary>
-        /// 閾値を変更する（int hash版）。
-        /// </summary>
-        public void SetThreshold(int hash, int key, float threshold)
-        {
-            if (!TryGetIndexByHash(hash, out int ownerIndex))
+            if (!TryGetIndexByHash(ownerHash, out int ownerIndex))
                 return;
 
-            for (int i = 0; i < _accumulatorCount; i++)
+            for (int i = 0; i < _scoreCount; i++)
             {
-                if (_accumulators[i].OwnerIndex == ownerIndex && _accumulators[i].KeyId == key)
+                if (_scores[i].OwnerIndex == ownerIndex && _scores[i].TargetHash == targetHash)
                 {
-                    _accumulators[i].Threshold = threshold;
-                    return;
-                }
-            }
-        }
-
-        /// <summary>
-        /// 蓄積値をリセット（GameObject版）。
-        /// </summary>
-        public void Reset(GameObject obj, int key)
-        {
-            if (obj == null) return;
-            Reset(obj.GetInstanceID(), key);
-        }
-
-        /// <summary>
-        /// 蓄積値をリセット（int hash版）。
-        /// </summary>
-        public void Reset(int hash, int key)
-        {
-            if (!TryGetIndexByHash(hash, out int ownerIndex))
-                return;
-
-            for (int i = 0; i < _accumulatorCount; i++)
-            {
-                if (_accumulators[i].OwnerIndex == ownerIndex && _accumulators[i].KeyId == key)
-                {
-                    _accumulators[i].CurrentValue = 0f;
+                    RemoveScoreAtIndex(i);
                     return;
                 }
             }
@@ -368,11 +346,8 @@ namespace ODC.Runtime
         /// </summary>
         public void Clear()
         {
-            for (int i = 0; i < _ownerCount; i++)
-                _owners[i] = null;
-
             _ownerCount = 0;
-            _accumulatorCount = 0;
+            _scoreCount = 0;
             _hashEntryCount = 0;
             _freeHashEntries.Clear();
 
@@ -386,9 +361,8 @@ namespace ODC.Runtime
         public void Dispose()
         {
             Clear();
-            _owners = null;
             _ownerData = null;
-            _accumulators = null;
+            _scores = null;
             _buckets = null;
             _hashEntries = null;
             _freeHashEntries = null;
@@ -398,15 +372,22 @@ namespace ODC.Runtime
         // 内部ヘルパー
         // =============================================
 
-        private void RemoveAccumulatorAtIndex(int index)
+        private float GetDecayedScore(ref ScoreEntry entry, float currentTime)
         {
-            int lastIndex = _accumulatorCount - 1;
+            float elapsed = currentTime - entry.LastUpdateTime;
+            if (elapsed <= 0f) return entry.RawScore;
+            return entry.RawScore * Mathf.Exp(-_decayRate * elapsed);
+        }
+
+        private void RemoveScoreAtIndex(int index)
+        {
+            int lastIndex = _scoreCount - 1;
             if (index != lastIndex)
             {
-                _accumulators[index] = _accumulators[lastIndex];
+                _scores[index] = _scores[lastIndex];
             }
-            _accumulators[lastIndex] = default;
-            _accumulatorCount--;
+            _scores[lastIndex] = default;
+            _scoreCount--;
         }
 
         private void BackSwapRemoveOwner(int ownerIndex)
@@ -418,21 +399,19 @@ namespace ODC.Runtime
             {
                 int movedHash = _ownerData[lastIndex].HashCode;
 
-                _owners[ownerIndex] = _owners[lastIndex];
                 _ownerData[ownerIndex] = _ownerData[lastIndex];
 
-                for (int i = 0; i < _accumulatorCount; i++)
+                for (int i = 0; i < _scoreCount; i++)
                 {
-                    if (_accumulators[i].OwnerIndex == lastIndex)
+                    if (_scores[i].OwnerIndex == lastIndex)
                     {
-                        _accumulators[i].OwnerIndex = ownerIndex;
+                        _scores[i].OwnerIndex = ownerIndex;
                     }
                 }
 
                 UpdateEntryDataIndex(movedHash, ownerIndex);
             }
 
-            _owners[lastIndex] = null;
             _ownerData[lastIndex] = default;
             RemoveFromHashTable(removedHash);
             _ownerCount--;
