@@ -1,11 +1,8 @@
 {
-    "name": "ObjectDataContainer",
-    "rootNamespace": "ZabutonTool",
+    "name": "ODC.ContainerPack.Tests",
+    "rootNamespace": "ODC.Tests",
     "references": [
         "ODC.ContainerPack.Runtime",
-        "Unity.Collections",
-        "Unity.Burst",
-        "Unity.Mathematics",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "Unity.PerformanceTesting"
@@ -15,12 +12,12 @@
     "allowUnsafeCode": true,
     "overrideReferences": true,
     "precompiledReferences": [
-        "nunit.framework.dll",
-        "ToolAttribute.dll",
-        "Unity.Burst.Unsafe.dll"
+        "nunit.framework.dll"
     ],
-    "autoReferenced": true,
-    "defineConstraints": [],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
     "versionDefines": [],
     "noEngineReferences": false
 }

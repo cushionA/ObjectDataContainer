@@ -310,6 +310,11 @@ using UnityEngine;
         /// </summary>
         private bool _isDisposed;
 
+        /// <summary>
+        /// データインデックスからハッシュコードへの逆引き配列（BackSwap時の更新用）
+        /// </summary>
+        private int[] _hashCodes;
+
         #region 管理対象のデータ
 
 {{unsafeLists}}
@@ -436,6 +441,9 @@ using UnityEngine;
             // 削除エントリ保管用のスタック作成
             this._freeEntry = new Stack<int>(maxCapacity);
 
+            // ハッシュコード逆引き配列の初期化
+            this._hashCodes = new int[maxCapacity];
+
             // メモリレイアウト計算とメモリ確保
             MemoryLayout layout = this.CalculateMemoryLayout(maxCapacity);
             this._totalMemorySize = layout.TotalSize;
@@ -513,6 +521,7 @@ using UnityEngine;
             int dataIndex = this._count;
 {{addAssignments}}
 
+            this._hashCodes[dataIndex] = hashCode;
             this.RegisterToHashTable(hashCode, dataIndex);
             this._count++;
             return dataIndex;
@@ -572,8 +581,12 @@ using UnityEngine;
             int lastIndex = this._count - 1;
             if (dataIndex != lastIndex)
             {
+                // 移動する要素のハッシュコードを取得し、ハッシュテーブルを更新
+                int movedHash = this._hashCodes[lastIndex];
 {{swapBackCalls}}
 {{arraySwaps}}
+                this._hashCodes[dataIndex] = movedHash;
+                this.UpdateEntryDataIndex(movedHash, dataIndex);
             }
             else
             {
@@ -914,11 +927,13 @@ using UnityEngine;
 
             // エントリとマッピングをクリア
             this._entries.Clear();
+            this._freeEntry.Clear();
 
             // データをクリア
 {{lengthResets}}
 {{arrayClears}}
 
+            Array.Clear(this._hashCodes, 0, this._count);
             this._count = 0;
         }
 
