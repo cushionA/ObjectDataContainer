@@ -119,6 +119,15 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// GameObjectをキーにオーナーを削除する。
+        /// </summary>
+        public bool RemoveOwner(GameObject obj)
+        {
+            if (obj == null) return false;
+            return RemoveOwner(obj.GetInstanceID());
+        }
+
+        /// <summary>
         /// 評価サイクルを開始する（候補をクリア）。
         /// </summary>
         public void BeginEvaluation(int hash)
@@ -257,16 +266,17 @@ namespace ODC.Runtime
                 used[i] = false;
             }
 
-            for (int picked = 0; picked < resultCount; picked++)
+            int picked;
+            for (picked = 0; picked < resultCount; picked++)
             {
                 int bestIdx = -1;
                 float bestScore = float.MinValue;
-                for (int i = 0; i < count; i++)
+                for (int j = 0; j < count; j++)
                 {
-                    if (!used[i] && _candidates[offset + i].Score > bestScore)
+                    if (!used[j] && _candidates[offset + j].Score > bestScore)
                     {
-                        bestScore = _candidates[offset + i].Score;
-                        bestIdx = i;
+                        bestScore = _candidates[offset + j].Score;
+                        bestIdx = j;
                     }
                 }
 
@@ -275,7 +285,7 @@ namespace ODC.Runtime
                 results[picked] = _candidates[offset + bestIdx].Value;
             }
 
-            return resultCount;
+            return picked;
         }
 
         /// <summary>
@@ -428,9 +438,7 @@ namespace ODC.Runtime
             {
                 if (_entries[current].HashCode == hashCode)
                 {
-                    var entry = _entries[current];
-                    entry.ValueIndex = newDataIndex;
-                    _entries[current] = entry;
+                    _entries[current].ValueIndex = newDataIndex;
                     return;
                 }
                 current = _entries[current].NextInBucket;

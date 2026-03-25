@@ -169,5 +169,29 @@ namespace ODC.Tests
         }
 
         #endregion
+
+        #region SetTemporary Bidirectional Restore
+
+        [Test]
+        public void SetTemporary_RestoresBothDirections()
+        {
+            // SetOneWayで非対称関係を作成
+            _container.SetOneWay(_player, _enemy, FactionRelationContainer.Relation.Hostile);
+            _container.SetOneWay(_enemy, _player, FactionRelationContainer.Relation.Allied);
+
+            // 一時的に変更
+            _container.SetTemporary(_player, _enemy, FactionRelationContainer.Relation.Neutral, 1f);
+
+            Assert.AreEqual(FactionRelationContainer.Relation.Neutral, _container.Get(_player, _enemy));
+            Assert.AreEqual(FactionRelationContainer.Relation.Neutral, _container.Get(_enemy, _player));
+
+            // タイムアウト → 元の非対称関係に戻る
+            _container.Tick(2f);
+
+            Assert.AreEqual(FactionRelationContainer.Relation.Hostile, _container.Get(_player, _enemy));
+            Assert.AreEqual(FactionRelationContainer.Relation.Allied, _container.Get(_enemy, _player));
+        }
+
+        #endregion
     }
 }

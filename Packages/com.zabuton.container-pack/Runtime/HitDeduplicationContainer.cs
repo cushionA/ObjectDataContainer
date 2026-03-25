@@ -190,11 +190,12 @@ namespace ODC.Runtime
 
         private static int CombineHash(int a, int b)
         {
-            // FNV-1a inspired mixing
+            // 非可換ハッシュ: CombineHash(a,b) != CombineHash(b,a)
             unchecked
             {
-                int hash = a;
-                hash = (hash ^ b) * 397;
+                int hash = a * 1000003;
+                hash ^= b;
+                hash *= 397;
                 return hash;
             }
         }
@@ -304,9 +305,7 @@ namespace ODC.Runtime
             {
                 if (_entries[current].HashCode == hashCode)
                 {
-                    var entry = _entries[current];
-                    entry.ValueIndex = newDataIndex;
-                    _entries[current] = entry;
+                    _entries[current].ValueIndex = newDataIndex;
                     return;
                 }
                 current = _entries[current].NextInBucket;

@@ -329,6 +329,69 @@ namespace ODC.Tests
 
     #endregion
 
+    #region SpatialHashContainer2D XY Plane Tests
+
+    [TestFixture]
+    public class SpatialHashContainer2D_XYPlaneTests
+    {
+        [Test]
+        public void XYPlane_UsesYCoordinate()
+        {
+            var container = new SpatialHashContainer2D<int>(10f, 64, SpatialPlane2D.XY);
+            var go1 = new GameObject("P1");
+            var go2 = new GameObject("P2");
+            var go3 = new GameObject("P3");
+
+            // XY平面: position.x, position.y を使用（zは無視）
+            go1.transform.position = new Vector3(5, 5, 100);
+            go2.transform.position = new Vector3(5, 5, -100);  // zだけ違う → 同セル
+            go3.transform.position = new Vector3(5, 50, 0);    // yが遠い → 別セル
+
+            container.Add(go1, 1);
+            container.Add(go2, 2);
+            container.Add(go3, 3);
+
+            Span<(int hash, int data, float dist)> buf = stackalloc (int, int, float)[16];
+            int count = container.QueryNeighbors(go1.transform.position, 15f, buf);
+
+            // go1とgo2は近い（同セル）。go3はy方向に遠い。
+            Assert.GreaterOrEqual(count, 2);
+
+            // go3を検索: 遠いセルにいるはず
+            bool foundGo3 = false;
+            for (int i = 0; i < count; i++)
+            {
+                if (buf[i].data == 3) foundGo3 = true;
+            }
+            Assert.IsFalse(foundGo3, "go3 is far in Y, should not be found in small radius");
+
+            container.Dispose();
+            Object.DestroyImmediate(go1);
+            Object.DestroyImmediate(go2);
+            Object.DestroyImmediate(go3);
+        }
+
+        [Test]
+        public void XYPlane_DefaultIsXZ()
+        {
+            // デフォルトはXZ（後方互換）
+            var container = new SpatialHashContainer2D<int>(10f, 64);
+            var go = new GameObject("P1");
+            go.transform.position = new Vector3(5, 100, 5); // yが高くてもXZなので影響なし
+
+            container.Add(go, 1);
+
+            Span<(int hash, int data, float dist)> buf = stackalloc (int, int, float)[16];
+            int count = container.QueryNeighbors(new Vector3(5, 0, 5), 15f, buf);
+            Assert.AreEqual(1, count);
+
+            container.Dispose();
+            Object.DestroyImmediate(go);
+        }
+    }
+
+    #endregion
+
     #region SpatialHashContainer3D Tests
 
     [TestFixture]

@@ -78,7 +78,7 @@ namespace ODC.Runtime
             _hashEntryCount = 0;
             _freeHashEntries = new Stack<int>();
 
-            _callbacks = new StateCallback[8]; // 初期8ステート分
+            _callbacks = new StateCallback[32]; // 最大32ステート分（GCアロケーション回避のため固定）
             _callbackCount = 0;
         }
 
@@ -173,7 +173,7 @@ namespace ODC.Runtime
 
             // 新規追加
             if (_callbackCount >= _callbacks.Length)
-                Array.Resize(ref _callbacks, _callbacks.Length * 2);
+                throw new InvalidOperationException($"コールバック登録数が上限（{_callbacks.Length}）に達しています。");
 
             _callbacks[_callbackCount++] = new StateCallback
             {

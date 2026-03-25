@@ -290,7 +290,7 @@ namespace ODC.Tests
                 tickCount++;
             });
 
-            Assert.AreEqual(1, tickCount); // TickElapsedが1回分超過 → 1回コールバック
+            Assert.AreEqual(2, tickCount); // 1.0s / 0.5s = 2回コールバック
             container.Dispose();
         }
 
@@ -324,6 +324,62 @@ namespace ODC.Tests
 
             Assert.AreEqual(0, container.OwnerCount);
             Assert.AreEqual(0, container.EffectCount);
+            container.Dispose();
+        }
+
+        #endregion
+
+        #region RemoveOwner with Multiple Effects
+
+        [Test]
+        public void RemoveOwner_ThreeOrMoreEffects_ClearsAll()
+        {
+            // BackSwapで3つ以上のエフェクトが正しく全削除されることを検証
+            var container = new StackableEffectContainer<PoisonEffect>(16);
+            var go = CreateGameObject("A");
+            var go2 = CreateGameObject("B");
+            container.AddOwner(go);
+            container.AddOwner(go2);
+
+            // goに3つのエフェクトを付与
+            container.Apply(go, Key_Poison, new PoisonEffect(10f), duration: 5f);
+            container.Apply(go, Key_Regen, new PoisonEffect(5f), duration: 5f);
+            container.Apply(go, Key_Shield, new PoisonEffect(50f), duration: -1f);
+
+            // go2にも1つ付与（BackSwapで移動される可能性のある要素）
+            container.Apply(go2, Key_Poison, new PoisonEffect(20f), duration: 5f);
+
+            container.RemoveOwner(go);
+
+            Assert.AreEqual(1, container.OwnerCount);
+            Assert.AreEqual(1, container.EffectCount);
+            Assert.IsTrue(container.IsActive(go2, Key_Poison));
+            Assert.IsFalse(container.ContainsOwner(go));
+            container.Dispose();
+        }
+
+        #endregion
+
+        #region TickAll Multiple Ticks Per Frame
+
+        [Test]
+        public void TickAll_LargeDeltaTime_FiresMultipleTicks()
+        {
+            var container = new StackableEffectContainer<PoisonEffect>(16);
+            var go = CreateGameObject("A");
+            container.AddOwner(go);
+
+            container.Apply(go, Key_Poison, new PoisonEffect(10f),
+                duration: 10f, tickInterval: 0.5f);
+
+            int tickCount = 0;
+            container.TickAll(2.0f, onTick: (hash, key, data, stacks) =>
+            {
+                tickCount++;
+            });
+
+            // 2.0s / 0.5s = 4回のtick
+            Assert.AreEqual(4, tickCount);
             container.Dispose();
         }
 

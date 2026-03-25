@@ -340,9 +340,7 @@ namespace ODC.Runtime
             {
                 if (_entries[current].HashCode == hashCode)
                 {
-                    var entry = _entries[current];
-                    entry.ValueIndex = newDataIndex;
-                    _entries[current] = entry;
+                    _entries[current].ValueIndex = newDataIndex;
                     return;
                 }
                 current = _entries[current].NextInBucket;

@@ -40,13 +40,13 @@ namespace ODC.Examples
         /// <summary>状態異常を付与</summary>
         public void ApplyStatus(GameObject character, int flagIndex)
         {
-            _statusFlags.SetFlag(character, flagIndex);
+            _statusFlags.SetFlag(character, 1UL << flagIndex);
         }
 
         /// <summary>状態異常を解除</summary>
         public void RemoveStatus(GameObject character, int flagIndex)
         {
-            _statusFlags.ClearFlag(character, flagIndex);
+            _statusFlags.ClearFlag(character, 1UL << flagIndex);
         }
 
         /// <summary>

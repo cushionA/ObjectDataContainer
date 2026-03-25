@@ -149,7 +149,10 @@ namespace ODC.Runtime
             }
 
             // Fisher-Yatesシャッフル方式: 一時インデックス配列でリジェクションなし
-            int[] indices = new int[_count];
+            // stackallocで GCアロケーションを回避（_count <= 256 まで）
+            Span<int> indices = _count <= 256
+                ? stackalloc int[_count]
+                : new int[_count];
             for (int i = 0; i < _count; i++)
                 indices[i] = i;
 
@@ -196,7 +199,15 @@ namespace ODC.Runtime
 
         private int NextInt(int max)
         {
-            return (int)(Xorshift32() % (uint)max);
+            // Rejection sampling でmodulo biasを排除
+            uint umax = (uint)max;
+            uint threshold = (uint)(-(int)umax) % umax; // = (2^32 - max) % max
+            uint r;
+            do
+            {
+                r = Xorshift32();
+            } while (r < threshold);
+            return (int)(r % umax);
         }
 
         private float NextFloat()

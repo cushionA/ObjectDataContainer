@@ -197,5 +197,28 @@ namespace ODC.Tests
         }
 
         #endregion
+
+        #region Participant Pool Compaction
+
+        [Test]
+        public void BeginEnd_Repeated_DoesNotExhaustParticipantPool()
+        {
+            // 参加者プールが正しくcompactされることを検証
+            var container = new MultiPartySequenceContainer<CoopState>(4, maxParticipantsTotal: 8);
+
+            // 4回Begin/Endを繰り返す → compactionなしなら8人分で枯渇する
+            for (int cycle = 0; cycle < 8; cycle++)
+            {
+                int seqId = container.Begin(new[] { cycle * 10, cycle * 10 + 1 }, 1, 5f, default);
+                container.End(seqId);
+            }
+
+            // まだ新規シーケンスを作成できる
+            int finalSeq = container.Begin(new[] { 100, 101 }, 1, 5f, default);
+            Assert.AreEqual(1, container.ActiveCount);
+            container.Dispose();
+        }
+
+        #endregion
     }
 }

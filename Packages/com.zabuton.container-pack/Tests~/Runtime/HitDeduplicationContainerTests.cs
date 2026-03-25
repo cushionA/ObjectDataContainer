@@ -139,5 +139,24 @@ namespace ODC.Tests
         }
 
         #endregion
+
+        #region CombineHash Non-Commutative
+
+        [Test]
+        public void TryRecord_SwappedEventTarget_AreDistinct()
+        {
+            // CombineHash(a,b) != CombineHash(b,a) を検証
+            var container = new HitDeduplicationContainer(64);
+
+            Assert.IsTrue(container.TryRecord(1, 2));   // event=1, target=2
+            Assert.IsTrue(container.TryRecord(2, 1));   // event=2, target=1 (別扱い)
+
+            Assert.AreEqual(1, container.GetHitCount(1, 2));
+            Assert.AreEqual(1, container.GetHitCount(2, 1));
+            Assert.AreEqual(2, container.Count);
+            container.Dispose();
+        }
+
+        #endregion
     }
 }

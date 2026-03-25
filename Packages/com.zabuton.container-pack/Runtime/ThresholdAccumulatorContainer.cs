@@ -130,12 +130,19 @@ namespace ODC.Runtime
             if (!TryGetIndexByHash(hashCode, out int ownerIndex))
                 return false;
 
-            // このオーナーの全アキュムレータを逆順で削除
-            for (int i = _accumulatorCount - 1; i >= 0; i--)
+            // BackSwapで末尾要素が現在位置に移動するため、
+            // 移動された要素も同オーナーの可能性がある → whileで再チェック
+            int i = _accumulatorCount - 1;
+            while (i >= 0)
             {
                 if (_accumulators[i].OwnerIndex == ownerIndex)
                 {
                     RemoveAccumulatorAtIndex(i);
+                    // BackSwapで_accumulators[i]に新しい要素が来た可能性 → iをデクリメントしない
+                }
+                else
+                {
+                    i--;
                 }
             }
 
@@ -442,11 +449,7 @@ namespace ODC.Runtime
                     if (prev == -1)
                         _buckets[bucketIndex] = _hashEntries[current].NextInBucket;
                     else
-                    {
-                        var prevEntry = _hashEntries[prev];
-                        prevEntry.NextInBucket = _hashEntries[current].NextInBucket;
-                        _hashEntries[prev] = prevEntry;
-                    }
+                        _hashEntries[prev].NextInBucket = _hashEntries[current].NextInBucket;
 
                     _freeHashEntries.Push(current);
                     return;
@@ -484,9 +487,7 @@ namespace ODC.Runtime
             {
                 if (_hashEntries[current].HashCode == hashCode)
                 {
-                    var entry = _hashEntries[current];
-                    entry.ValueIndex = newDataIndex;
-                    _hashEntries[current] = entry;
+                    _hashEntries[current].ValueIndex = newDataIndex;
                     return;
                 }
                 current = _hashEntries[current].NextInBucket;

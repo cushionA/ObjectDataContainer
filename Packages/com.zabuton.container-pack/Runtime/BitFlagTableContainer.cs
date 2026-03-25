@@ -144,6 +144,15 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// GameObjectをキーにフラグマスクをセット。
+        /// </summary>
+        public void SetFlag(GameObject obj, ulong flagMask)
+        {
+            if (obj == null) throw new ArgumentNullException(nameof(obj));
+            SetFlag(obj.GetInstanceID(), flagMask);
+        }
+
+        /// <summary>
         /// フラグマスクをクリア（AND NOT演算）。O(1)。
         /// </summary>
         /// <param name="hash">対象のハッシュ値</param>
@@ -155,6 +164,15 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// GameObjectをキーにフラグマスクをクリア。
+        /// </summary>
+        public void ClearFlag(GameObject obj, ulong flagMask)
+        {
+            if (obj == null) throw new ArgumentNullException(nameof(obj));
+            ClearFlag(obj.GetInstanceID(), flagMask);
+        }
+
+        /// <summary>
         /// フラグマスクをトグル（XOR演算）。O(1)。
         /// </summary>
         /// <param name="hash">対象のハッシュ値</param>
@@ -163,6 +181,15 @@ namespace ODC.Runtime
         {
             int idx = GetIndexOrThrow(hash);
             _flags[idx] ^= flagMask;
+        }
+
+        /// <summary>
+        /// GameObjectをキーにフラグマスクをトグル。
+        /// </summary>
+        public void ToggleFlag(GameObject obj, ulong flagMask)
+        {
+            if (obj == null) throw new ArgumentNullException(nameof(obj));
+            ToggleFlag(obj.GetInstanceID(), flagMask);
         }
 
         /// <summary>
@@ -178,6 +205,15 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// GameObjectをキーに指定フラグが全てセットされているか判定。
+        /// </summary>
+        public bool HasAll(GameObject obj, ulong flagMask)
+        {
+            if (obj == null) return false;
+            return HasAll(obj.GetInstanceID(), flagMask);
+        }
+
+        /// <summary>
         /// 指定フラグのいずれかがセットされているか。O(1)。
         /// </summary>
         /// <param name="hash">対象のハッシュ値</param>
@@ -187,6 +223,15 @@ namespace ODC.Runtime
         {
             int idx = GetIndexOrThrow(hash);
             return (_flags[idx] & flagMask) != 0;
+        }
+
+        /// <summary>
+        /// GameObjectをキーに指定フラグのいずれかがセットされているか判定。
+        /// </summary>
+        public bool HasAny(GameObject obj, ulong flagMask)
+        {
+            if (obj == null) return false;
+            return HasAny(obj.GetInstanceID(), flagMask);
         }
 
         /// <summary>
@@ -377,9 +422,7 @@ namespace ODC.Runtime
             {
                 if (_entries[current].HashCode == hashCode)
                 {
-                    var entry = _entries[current];
-                    entry.ValueIndex = newDataIndex;
-                    _entries[current] = entry;
+                    _entries[current].ValueIndex = newDataIndex;
                     return;
                 }
                 current = _entries[current].NextInBucket;

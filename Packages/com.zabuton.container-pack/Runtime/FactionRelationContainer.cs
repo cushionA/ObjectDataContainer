@@ -22,7 +22,8 @@ namespace ODC.Runtime
         {
             public int FactionA;
             public int FactionB;
-            public Relation OriginalRelation;
+            public Relation OriginalAB;  // A→B の元関係
+            public Relation OriginalBA;  // B→A の元関係
             public float RemainingTime;
         }
 
@@ -126,14 +127,16 @@ namespace ODC.Runtime
             if (_tempCount >= _maxTempRelations)
                 throw new InvalidOperationException("一時関係数が上限に達しています。");
 
-            // 元の関係を保存
-            Relation original = _relations[factionA * MaxFactions + factionB];
+            // 元の関係を双方向保存
+            Relation originalAB = _relations[factionA * MaxFactions + factionB];
+            Relation originalBA = _relations[factionB * MaxFactions + factionA];
 
             _tempRelations[_tempCount] = new TempRelation
             {
                 FactionA = factionA,
                 FactionB = factionB,
-                OriginalRelation = original,
+                OriginalAB = originalAB,
+                OriginalBA = originalBA,
                 RemainingTime = duration
             };
             _tempCount++;
@@ -191,18 +194,18 @@ namespace ODC.Runtime
         /// <param name="deltaTime">経過時間（秒）</param>
         public void Tick(float deltaTime)
         {
-            for (int i = _tempCount - 1; i >= 0; i--)
+            int i = _tempCount - 1;
+            while (i >= 0)
             {
                 _tempRelations[i].RemainingTime -= deltaTime;
                 if (_tempRelations[i].RemainingTime <= 0f)
                 {
-                    // 元の関係に戻す
+                    // 元の関係を双方向復元
                     int a = _tempRelations[i].FactionA;
                     int b = _tempRelations[i].FactionB;
-                    Relation original = _tempRelations[i].OriginalRelation;
 
-                    _relations[a * MaxFactions + b] = original;
-                    _relations[b * MaxFactions + a] = original;
+                    _relations[a * MaxFactions + b] = _tempRelations[i].OriginalAB;
+                    _relations[b * MaxFactions + a] = _tempRelations[i].OriginalBA;
 
                     // BackSwap削除
                     int lastIndex = _tempCount - 1;
@@ -212,6 +215,11 @@ namespace ODC.Runtime
                     }
                     _tempRelations[lastIndex] = default;
                     _tempCount--;
+                    // BackSwapで新要素が来た可能性 → iをデクリメントしない
+                }
+                else
+                {
+                    i--;
                 }
             }
         }

@@ -140,11 +140,19 @@ namespace ODC.Runtime
             if (!TryGetIndexByHash(hashCode, out int ownerIndex))
                 return false;
 
-            for (int i = _effectCount - 1; i >= 0; i--)
+            // BackSwapで末尾要素が現在位置に移動するため、
+            // 移動された要素も同オーナーの可能性がある → whileで再チェック
+            int i = _effectCount - 1;
+            while (i >= 0)
             {
                 if (_effects[i].OwnerIndex == ownerIndex)
                 {
                     RemoveEffectAtIndex(i);
+                    // BackSwapで_effects[i]に新しい要素が来た可能性 → iをデクリメントしない
+                }
+                else
+                {
+                    i--;
                 }
             }
 
@@ -361,11 +369,11 @@ namespace ODC.Runtime
                     }
                 }
 
-                // TickInterval処理
+                // TickInterval処理（大きなdeltaTimeで複数回発火）
                 if (effect.TickInterval > 0f)
                 {
                     effect.TickElapsed += deltaTime;
-                    if (effect.TickElapsed >= effect.TickInterval)
+                    while (effect.TickElapsed >= effect.TickInterval)
                     {
                         effect.TickElapsed -= effect.TickInterval;
                         onTick?.Invoke(entityHash, effect.EffectKey, effect.EffectData, effect.StackCount);
@@ -496,11 +504,7 @@ namespace ODC.Runtime
                     if (prev == -1)
                         _buckets[bucketIndex] = _hashEntries[current].NextInBucket;
                     else
-                    {
-                        var prevEntry = _hashEntries[prev];
-                        prevEntry.NextInBucket = _hashEntries[current].NextInBucket;
-                        _hashEntries[prev] = prevEntry;
-                    }
+                        _hashEntries[prev].NextInBucket = _hashEntries[current].NextInBucket;
 
                     _freeHashEntries.Push(current);
                     return;
@@ -538,9 +542,7 @@ namespace ODC.Runtime
             {
                 if (_hashEntries[current].HashCode == hashCode)
                 {
-                    var entry = _hashEntries[current];
-                    entry.ValueIndex = newDataIndex;
-                    _hashEntries[current] = entry;
+                    _hashEntries[current].ValueIndex = newDataIndex;
                     return;
                 }
                 current = _hashEntries[current].NextInBucket;

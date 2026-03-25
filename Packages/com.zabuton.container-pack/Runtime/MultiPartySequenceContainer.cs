@@ -306,11 +306,29 @@ namespace ODC.Runtime
         private void RemoveSequenceAtIndex(int seqIndex)
         {
             int seqId = _sequences[seqIndex].SequenceId;
+            int removedPartStart = _sequences[seqIndex].ParticipantStartIndex;
+            int removedPartCount = _sequences[seqIndex].ParticipantCount;
 
-            // 参加者データはflatに連続 → 別シーケンスの参加者インデックスが変わるので
-            // 参加者の移動は行わず、参加者カウントは減らすだけ（簡易化）
-            // ※厳密にはcompactionが必要だが、シーケンス数が少ないため割り切り
+            // 参加者配列をcompact: 削除範囲以降を前に詰める
+            int removedPartEnd = removedPartStart + removedPartCount;
+            if (removedPartEnd < _participantCount)
+            {
+                Array.Copy(_participants, removedPartEnd, _participants, removedPartStart,
+                    _participantCount - removedPartEnd);
+            }
+            _participantCount -= removedPartCount;
 
+            // 全シーケンスのParticipantStartIndexを更新
+            for (int i = 0; i < _sequenceCount; i++)
+            {
+                if (i == seqIndex) continue;
+                if (_sequences[i].ParticipantStartIndex > removedPartStart)
+                {
+                    _sequences[i].ParticipantStartIndex -= removedPartCount;
+                }
+            }
+
+            // シーケンス配列のBackSwap
             int lastSeqIndex = _sequenceCount - 1;
             if (seqIndex != lastSeqIndex)
             {
@@ -408,9 +426,7 @@ namespace ODC.Runtime
             {
                 if (_entries[current].HashCode == hashCode)
                 {
-                    var entry = _entries[current];
-                    entry.ValueIndex = newDataIndex;
-                    _entries[current] = entry;
+                    _entries[current].ValueIndex = newDataIndex;
                     return;
                 }
                 current = _entries[current].NextInBucket;
