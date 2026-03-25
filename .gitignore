@@ -124,6 +124,9 @@ ToolAttribute/obj/
 /[Aa]ssets/Resources.meta
 /[Aa]ssets/com.zabuton.container-pack.meta
 
+# Tests~ junction for local development (symlink to Tests~/Runtime)
+Assets/com.zabuton.container-pack/Tests/
+
 # Local tool files
 .claude/
 .mcp.json
