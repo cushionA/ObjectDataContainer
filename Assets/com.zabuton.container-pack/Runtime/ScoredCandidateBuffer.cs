@@ -103,7 +103,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            AddOwner(obj.GetInstanceID());
+            AddOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -124,7 +124,7 @@ namespace ODC.Runtime
         public bool RemoveOwner(GameObject obj)
         {
             if (obj == null) return false;
-            return RemoveOwner(obj.GetInstanceID());
+            return RemoveOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -143,7 +143,7 @@ namespace ODC.Runtime
         public void BeginEvaluation(GameObject obj)
         {
             if (obj == null) return;
-            BeginEvaluation(obj.GetInstanceID());
+            BeginEvaluation(obj.GetHashCode());
         }
 
         /// <summary>
@@ -191,7 +191,7 @@ namespace ODC.Runtime
         public void Submit(GameObject obj, in T candidate, float score)
         {
             if (obj == null) return;
-            Submit(obj.GetInstanceID(), candidate, score);
+            Submit(obj.GetHashCode(), candidate, score);
         }
 
         /// <summary>
@@ -236,7 +236,7 @@ namespace ODC.Runtime
                 bestScore = 0f;
                 return false;
             }
-            return TryGetBest(obj.GetInstanceID(), out best, out bestScore);
+            return TryGetBest(obj.GetHashCode(), out best, out bestScore);
         }
 
         /// <summary>

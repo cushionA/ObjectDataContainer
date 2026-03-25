@@ -76,7 +76,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            return Add(obj.GetInstanceID(), data, duration);
+            return Add(obj.GetHashCode(), data, duration);
         }
 
         /// <summary>
@@ -108,7 +108,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
@@ -155,7 +155,7 @@ namespace ODC.Runtime
         public bool TryGetValue(GameObject obj, out T data, out float remainingTime)
         {
             if (obj != null)
-                return TryGetValue(obj.GetInstanceID(), out data, out remainingTime);
+                return TryGetValue(obj.GetHashCode(), out data, out remainingTime);
 
             data = null;
             remainingTime = 0f;
@@ -194,7 +194,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return ContainsKey(obj.GetInstanceID());
+            return ContainsKey(obj.GetHashCode());
         }
 
         /// <summary>

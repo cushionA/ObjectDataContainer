@@ -104,7 +104,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            Add(obj.GetInstanceID());
+            Add(obj.GetHashCode());
         }
 
         /// <summary>
@@ -128,7 +128,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
