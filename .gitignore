@@ -98,5 +98,33 @@ InitTestScene*.unity*
 # Source Generator / Attribute project build outputs
 ToolCodeGenerater/bin/
 ToolCodeGenerater/obj/
+ToolCodeGenerater/Properties/
 ToolAttribute/bin/
 ToolAttribute/obj/
+
+# Unity auto-generated solution/project files
+*.csproj
+*.sln
+
+# Unity project settings (not shared — package distribution only)
+/ProjectSettings/
+/[Aa]ssets/Scenes/
+/[Aa]ssets/Settings/
+/[Aa]ssets/Resources/
+/[Aa]ssets/DefaultVolumeProfile.asset
+/[Aa]ssets/DefaultVolumeProfile.asset.meta
+/[Aa]ssets/UniversalRenderPipelineGlobalSettings.asset
+/[Aa]ssets/UniversalRenderPipelineGlobalSettings.asset.meta
+/[Aa]ssets/InputSystem_Actions.inputactions
+/[Aa]ssets/InputSystem_Actions.inputactions.meta
+/[Aa]ssets/Plugin/
+/[Aa]ssets/Plugin.meta
+/[Aa]ssets/Scenes.meta
+/[Aa]ssets/Settings.meta
+/[Aa]ssets/Resources.meta
+/[Aa]ssets/com.zabuton.container-pack.meta
+
+# Local tool files
+.claude/
+.mcp.json
+TestLog.txt
