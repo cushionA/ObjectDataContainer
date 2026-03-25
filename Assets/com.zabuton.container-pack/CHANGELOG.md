@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0] - 2026-03-25
+
+### Fixed
+- FactionRelationContainer.Tick: BackSwap逆順走査の境界外アクセスを修正
+- StackableEffectContainer.RemoveOwner: 同上
+- ThresholdAccumulatorContainer.RemoveOwner: 同上
+
 ## [1.0.0] - 2025-03-25
 
 ### Added
@@ -13,6 +20,17 @@
   - GroupContainer: グループ管理
   - StateMapContainer: 状態マッピング
   - ComponentCache: コンポーネントキャッシュ
+  - SparseSetContainer: 疎密集合（Span連続アクセス）
+  - ThresholdAccumulatorContainer: 閾値付き蓄積器
+  - WeightedSamplerContainer: Walker's Alias法によるO(1)重み付き抽選
+  - BitFlagTableContainer: ハッシュキー × ビットフラグテーブル
+  - FixedSlotContainer: エンティティ毎の固定Nスロット
+  - FactionRelationContainer: 勢力間関係行列（一時オーバーライド対応）
+  - HitDeduplicationContainer: ヒット重複排除（貫通対応）
+  - FlagComboLookupContainer: フラグ組み合わせ → エフェクト検索
+  - ScoredCandidateBuffer: スコア付き候補バッファ
+  - MultiPartySequenceContainer: 複数参加者ステップシーケンス
+  - StackableEffectContainer: スタック可能な時限エフェクト
 - Source Generator（ODC.Attributes）
   - ContainerSetting属性によるコンテナ自動生成
   - struct型はUnsafeListで一括メモリ管理
