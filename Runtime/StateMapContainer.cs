@@ -62,7 +62,6 @@ namespace ODC.Runtime
         /// <summary>
         /// ステートマップコンテナを生成する。
         /// </summary>
-        /// <param name="maxCapacity">最大要素数</param>
         public StateMapContainer(int maxCapacity)
         {
             _maxCapacity = maxCapacity;
@@ -78,65 +77,70 @@ namespace ODC.Runtime
             _hashEntryCount = 0;
             _freeHashEntries = new Stack<int>();
 
-            _callbacks = new StateCallback[32]; // 最大32ステート分（GCアロケーション回避のため固定）
+            _callbacks = new StateCallback[32];
             _callbackCount = 0;
         }
 
         /// <summary>
         /// GameObjectと初期ステートを追加する。
         /// </summary>
-        /// <param name="obj">追加するGameObject</param>
-        /// <param name="initialState">初期ステート</param>
         public void Add(GameObject obj, TState initialState)
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            Add(obj.GetInstanceID(), initialState);
+            _gameObjects[_activeCount - 1] = obj;
+        }
+
+        /// <summary>
+        /// int hashと初期ステートを追加する。
+        /// </summary>
+        public void Add(int hash, TState initialState)
+        {
             if (_activeCount >= _maxCapacity)
                 throw new InvalidOperationException("コンテナが満杯です。");
-
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
-            if (TryGetIndexByHash(hashCode, out _))
-                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+            if (TryGetIndexByHash(hash, out _))
+                throw new InvalidOperationException("同じハッシュが既に登録されています。");
 
             int index = _activeCount;
 
-            _gameObjects[index] = obj;
             _states[index] = new StateEntry
             {
                 CurrentState = initialState,
                 PreviousState = initialState,
                 StateElapsedTime = 0f,
-                HashCode = hashCode
+                HashCode = hash
             };
             _activeCount++;
 
-            AddToHashTable(hashCode, index);
+            AddToHashTable(hash, index);
         }
 
         /// <summary>
-        /// GameObjectを削除する。BackSwap方式で最後尾の要素と入れ替える。
+        /// GameObjectを削除する。
         /// </summary>
-        /// <param name="obj">削除するGameObject</param>
-        /// <returns>削除に成功した場合true</returns>
         public bool Remove(GameObject obj)
         {
             if (obj == null) return false;
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
+            return Remove(obj.GetInstanceID());
+        }
 
-            if (!TryGetIndexByHash(hashCode, out int index))
+        /// <summary>
+        /// int hashを削除する。
+        /// </summary>
+        public bool Remove(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int index))
                 return false;
 
             int lastIndex = _activeCount - 1;
 
-            // ハッシュテーブルから削除
-            RemoveFromHashTable(hashCode, index);
+            RemoveFromHashTable(hash, index);
 
             if (index < lastIndex)
             {
-                // BackSwap: 最後尾を削除位置に移動
                 int lastHashCode = _states[lastIndex].HashCode;
 
-                // 最後尾のハッシュテーブルエントリを更新
                 UpdateHashTableIndex(lastHashCode, lastIndex, index);
 
                 _gameObjects[index] = _gameObjects[lastIndex];
@@ -151,16 +155,11 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 特定のステートに対するOnEnter/OnExitコールバックを登録する。
-        /// AI FSMのステート遷移フック等に使用する。
         /// </summary>
-        /// <param name="state">対象のステート</param>
-        /// <param name="onEnter">このステートに遷移した時のコールバック。引数は (obj, fromState)。nullで省略可。</param>
-        /// <param name="onExit">このステートから離脱した時のコールバック。引数は (obj, toState)。nullで省略可。</param>
         public void RegisterCallback(TState state, Action<GameObject, TState> onEnter = null, Action<GameObject, TState> onExit = null)
         {
             var comparer = EqualityComparer<TState>.Default;
 
-            // 既存エントリを上書き
             for (int i = 0; i < _callbackCount; i++)
             {
                 if (comparer.Equals(_callbacks[i].State, state))
@@ -171,7 +170,6 @@ namespace ODC.Runtime
                 }
             }
 
-            // 新規追加
             if (_callbackCount >= _callbacks.Length)
                 throw new InvalidOperationException($"コールバック登録数が上限（{_callbacks.Length}）に達しています。");
 
@@ -186,7 +184,6 @@ namespace ODC.Runtime
         /// <summary>
         /// 特定のステートのコールバック登録を解除する。
         /// </summary>
-        /// <param name="state">対象のステート</param>
         public void UnregisterCallback(TState state)
         {
             var comparer = EqualityComparer<TState>.Default;
@@ -194,7 +191,6 @@ namespace ODC.Runtime
             {
                 if (comparer.Equals(_callbacks[i].State, state))
                 {
-                    // BackSwap削除
                     _callbackCount--;
                     if (i < _callbackCount)
                         _callbacks[i] = _callbacks[_callbackCount];
@@ -205,18 +201,14 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// ステートを遷移させる。同じステートの場合は何もしない。
-        /// コールバックが登録されている場合、旧ステートのOnExit → 新ステートのOnEnterの順で発火する。
+        /// ステートを遷移させる（GameObject版）。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="newState">新しいステート</param>
-        /// <returns>GameObjectが見つかった場合true</returns>
         public bool SetState(GameObject obj, TState newState)
         {
             if (obj == null) return false;
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
+            int hash = obj.GetInstanceID();
 
-            if (TryGetIndexByHash(hashCode, out int index))
+            if (TryGetIndexByHash(hash, out int index))
             {
                 ref var entry = ref _states[index];
                 if (!EqualityComparer<TState>.Default.Equals(entry.CurrentState, newState))
@@ -226,7 +218,6 @@ namespace ODC.Runtime
                     entry.CurrentState = newState;
                     entry.StateElapsedTime = 0f;
 
-                    // コールバック発火（OnExit → OnEnter）
                     if (_callbackCount > 0)
                     {
                         FireCallbacks(obj, oldState, newState);
@@ -238,11 +229,33 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// ステートを遷移させる（int hash版）。コールバックにはnullのGameObjectが渡される。
+        /// </summary>
+        public bool SetState(int hash, TState newState)
+        {
+            if (TryGetIndexByHash(hash, out int index))
+            {
+                ref var entry = ref _states[index];
+                if (!EqualityComparer<TState>.Default.Equals(entry.CurrentState, newState))
+                {
+                    TState oldState = entry.CurrentState;
+                    entry.PreviousState = oldState;
+                    entry.CurrentState = newState;
+                    entry.StateElapsedTime = 0f;
+
+                    if (_callbackCount > 0)
+                    {
+                        FireCallbacks(_gameObjects[index], oldState, newState);
+                    }
+                }
+                return true;
+            }
+            return false;
+        }
+
+        /// <summary>
         /// GameObjectの現在のステートを取得する。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="current">現在のステート</param>
-        /// <returns>見つかった場合true</returns>
         public bool TryGetState(GameObject obj, out TState current)
         {
             if (obj == null)
@@ -250,9 +263,15 @@ namespace ODC.Runtime
                 current = default;
                 return false;
             }
+            return TryGetState(obj.GetInstanceID(), out current);
+        }
 
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
-            if (TryGetIndexByHash(hashCode, out int index))
+        /// <summary>
+        /// int hashの現在のステートを取得する。
+        /// </summary>
+        public bool TryGetState(int hash, out TState current)
+        {
+            if (TryGetIndexByHash(hash, out int index))
             {
                 current = _states[index].CurrentState;
                 return true;
@@ -265,11 +284,6 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectの現在・前回のステートと経過時間を取得する。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <param name="current">現在のステート</param>
-        /// <param name="previous">前回のステート</param>
-        /// <param name="elapsed">現在のステートになってからの経過時間</param>
-        /// <returns>見つかった場合true</returns>
         public bool TryGetState(GameObject obj, out TState current, out TState previous, out float elapsed)
         {
             if (obj == null)
@@ -279,9 +293,15 @@ namespace ODC.Runtime
                 elapsed = 0f;
                 return false;
             }
+            return TryGetState(obj.GetInstanceID(), out current, out previous, out elapsed);
+        }
 
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
-            if (TryGetIndexByHash(hashCode, out int index))
+        /// <summary>
+        /// int hashの現在・前回のステートと経過時間を取得する。
+        /// </summary>
+        public bool TryGetState(int hash, out TState current, out TState previous, out float elapsed)
+        {
+            if (TryGetIndexByHash(hash, out int index))
             {
                 ref var entry = ref _states[index];
                 current = entry.CurrentState;
@@ -299,9 +319,6 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectの現在のステートを取得する。見つからない場合は例外をスローする。
         /// </summary>
-        /// <param name="obj">対象のGameObject</param>
-        /// <returns>現在のステート</returns>
-        /// <exception cref="KeyNotFoundException">GameObjectが見つからない場合</exception>
         public TState GetState(GameObject obj)
         {
             if (TryGetState(obj, out var state))
@@ -311,9 +328,19 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// int hashの現在のステートを取得する。見つからない場合は例外をスローする。
+        /// </summary>
+        public TState GetState(int hash)
+        {
+            if (TryGetState(hash, out var state))
+                return state;
+
+            throw new KeyNotFoundException("指定されたハッシュはコンテナに存在しません。");
+        }
+
+        /// <summary>
         /// 全要素の経過時間をインクリメントする。
         /// </summary>
-        /// <param name="deltaTime">経過時間（秒）</param>
         public void Update(float deltaTime)
         {
             for (int i = 0; i < _activeCount; i++)
@@ -325,9 +352,6 @@ namespace ODC.Runtime
         /// <summary>
         /// 指定したステートにある全GameObjectを取得する。
         /// </summary>
-        /// <param name="state">検索するステート</param>
-        /// <param name="results">結果を書き込むSpan</param>
-        /// <returns>見つかった要素数</returns>
         public int GetAllInState(TState state, Span<GameObject> results)
         {
             int written = 0;
@@ -350,15 +374,44 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// 指定したGameObjectがコンテナに含まれているか確認する。
+        /// 指定したステートにある全ハッシュを取得する。
         /// </summary>
-        /// <param name="obj">確認するGameObject</param>
-        /// <returns>含まれている場合true</returns>
+        public int GetAllInState(TState state, Span<int> results)
+        {
+            int written = 0;
+            int maxResults = results.Length;
+            var comparer = EqualityComparer<TState>.Default;
+
+            for (int i = 0; i < _activeCount; i++)
+            {
+                if (comparer.Equals(_states[i].CurrentState, state))
+                {
+                    if (written < maxResults)
+                    {
+                        results[written] = _states[i].HashCode;
+                        written++;
+                    }
+                }
+            }
+
+            return written;
+        }
+
+        /// <summary>
+        /// 指定されたGameObjectがコンテナに含まれているか確認する。
+        /// </summary>
         public bool ContainsKey(GameObject obj)
         {
             if (obj == null) return false;
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
-            return TryGetIndexByHash(hashCode, out _);
+            return ContainsKey(obj.GetInstanceID());
+        }
+
+        /// <summary>
+        /// 指定されたint hashがコンテナに含まれているか確認する。
+        /// </summary>
+        public bool ContainsKey(int hash)
+        {
+            return TryGetIndexByHash(hash, out _);
         }
 
         /// <summary>
@@ -399,7 +452,6 @@ namespace ODC.Runtime
         {
             var comparer = EqualityComparer<TState>.Default;
 
-            // oldStateのOnExit
             for (int i = 0; i < _callbackCount; i++)
             {
                 if (comparer.Equals(_callbacks[i].State, oldState))
@@ -409,7 +461,6 @@ namespace ODC.Runtime
                 }
             }
 
-            // newStateのOnEnter
             for (int i = 0; i < _callbackCount; i++)
             {
                 if (comparer.Equals(_callbacks[i].State, newState))

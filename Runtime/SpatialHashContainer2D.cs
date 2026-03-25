@@ -17,14 +17,14 @@ namespace ODC.Runtime
 
     /// <summary>
     /// 2D空間ハッシュコンテナ。XZ平面（3D）とXY平面（2D）の両方に対応。
-    /// GameObjectをキーとしてデータを格納し、Transform位置を自動追跡する。
-    /// Update()で全要素の位置を再ハッシュし、QueryNeighborsで近傍検索を行う。
+    /// GameObjectまたはint hashをキーとしてデータを格納し、位置ベースの近傍検索を行う。
+    /// GameObject版はTransform位置を自動追跡、int hash版は手動位置更新に対応。
     /// </summary>
     /// <typeparam name="T">格納するデータ型（参照型のみ）</typeparam>
     public class SpatialHashContainer2D<T> : IDisposable where T : class
     {
         /// <summary>
-        /// 要素データ。GameObjectへの参照、ユーザーデータ、現在のセルキー、ハッシュコードを保持する。
+        /// 要素データ。GameObjectへの参照、ユーザーデータ、現在のセルキー、ハッシュコード、位置を保持する。
         /// </summary>
         private struct ElementData
         {
@@ -32,6 +32,7 @@ namespace ODC.Runtime
             public T Data;
             public int CellKey;
             public int HashCode;
+            public Vector3 Position;
         }
 
         /// <summary>
@@ -121,50 +122,59 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectとデータを追加する。位置はobj.transform.positionから読み取る。
         /// </summary>
-        /// <param name="obj">追加するGameObject</param>
-        /// <param name="data">関連データ</param>
-        /// <returns>要素のインデックス</returns>
         public int Add(GameObject obj, T data)
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
+            Vector3 pos = obj.transform.position;
+            int idx = Add(obj.GetInstanceID(), data, pos);
+            _elements[idx].GameObject = obj;
+            return idx;
+        }
+
+        /// <summary>
+        /// int hashとデータを指定位置で追加する。Transform不要。
+        /// </summary>
+        public int Add(int hash, T data, Vector3 position)
+        {
             if (_activeCount >= _maxCapacity)
                 throw new InvalidOperationException("コンテナが満杯です。");
-
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
-            if (TryGetIndexByHash(hashCode, out _))
-                throw new InvalidOperationException("同じGameObjectが既に登録されています。");
+            if (TryGetIndexByHash(hash, out _))
+                throw new InvalidOperationException("同じハッシュが既に登録されています。");
 
             int index = _activeCount;
-            Vector3 pos = obj.transform.position;
-            int cellKey = GetCellKey(pos);
+            int cellKey = GetCellKey(position);
 
             _elements[index] = new ElementData
             {
-                GameObject = obj,
                 Data = data,
                 CellKey = cellKey,
-                HashCode = hashCode
+                HashCode = hash,
+                Position = position
             };
             _activeCount++;
 
-            AddToHashTable(hashCode, index);
+            AddToHashTable(hash, index);
             AddToCellGrid(cellKey, index);
 
             return index;
         }
 
         /// <summary>
-        /// GameObjectを削除する。BackSwap方式で最後尾の要素と入れ替える。
+        /// GameObjectを削除する。
         /// </summary>
-        /// <param name="obj">削除するGameObject</param>
-        /// <returns>削除に成功した場合true</returns>
         public bool Remove(GameObject obj)
         {
             if (obj == null) return false;
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
+            return Remove(obj.GetInstanceID());
+        }
 
-            if (!TryGetIndexByHash(hashCode, out int index))
+        /// <summary>
+        /// int hashを削除する。
+        /// </summary>
+        public bool Remove(int hash)
+        {
+            if (!TryGetIndexByHash(hash, out int index))
                 return false;
 
             RemoveAtIndex(index);
@@ -172,38 +182,42 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// インデックス指定で要素をBackSwap方式で削除する。
+        /// 個別の位置を手動更新する。Transform.positionの代替。
         /// </summary>
-        private void RemoveAtIndex(int index)
+        public void UpdatePosition(int hash, Vector3 newPosition)
         {
-            int lastIndex = _activeCount - 1;
+            if (!TryGetIndexByHash(hash, out int index))
+                return;
 
-            // セルグリッドから削除
-            RemoveFromCellGrid(_elements[index].CellKey, index);
+            ref var element = ref _elements[index];
+            element.Position = newPosition;
+            int newCellKey = GetCellKey(newPosition);
 
-            // ハッシュテーブルから削除
-            RemoveFromHashTable(_elements[index].HashCode, index);
-
-            if (index < lastIndex)
+            if (newCellKey != element.CellKey)
             {
-                // BackSwap: 最後尾を削除位置に移動
-                var lastElement = _elements[lastIndex];
-
-                // 最後尾のセルグリッドエントリを更新
-                UpdateCellGridIndex(lastElement.CellKey, lastIndex, index);
-
-                // 最後尾のハッシュテーブルエントリを更新
-                UpdateHashTableIndex(lastElement.HashCode, lastIndex, index);
-
-                _elements[index] = lastElement;
+                RemoveFromCellGrid(element.CellKey, index);
+                AddToCellGrid(newCellKey, index);
+                element.CellKey = newCellKey;
             }
+        }
 
-            _elements[lastIndex] = default;
-            _activeCount--;
+        /// <summary>
+        /// 全位置を外部配列から一括更新する。SoAアーキテクチャ向け。
+        /// </summary>
+        /// <param name="hashes">更新対象のハッシュ配列</param>
+        /// <param name="positions">対応する新しい位置配列</param>
+        public void UpdatePositions(ReadOnlySpan<int> hashes, ReadOnlySpan<Vector3> positions)
+        {
+            int count = Math.Min(hashes.Length, positions.Length);
+            for (int i = 0; i < count; i++)
+            {
+                UpdatePosition(hashes[i], positions[i]);
+            }
         }
 
         /// <summary>
         /// 全要素のTransform位置を読み取り、セルキーが変わった場合に再ハッシュする。
+        /// GameObjectが設定されていない要素（int hash版で追加）はスキップされる。
         /// </summary>
         public void Update()
         {
@@ -212,11 +226,17 @@ namespace ODC.Runtime
                 ref var element = ref _elements[i];
                 if (element.GameObject == null)
                 {
-                    RemoveAtIndex(i);
+                    // int hash版で追加された要素はスキップ（手動更新が必要）
+                    // ただしDataもnullなら破棄されたGameObjectとみなして削除
+                    if (element.Data == null)
+                    {
+                        RemoveAtIndex(i);
+                    }
                     continue;
                 }
 
                 Vector3 pos = element.GameObject.transform.position;
+                element.Position = pos;
                 int newCellKey = GetCellKey(pos);
 
                 if (newCellKey != element.CellKey)
@@ -230,12 +250,7 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 指定した中心座標と半径内にある要素を検索する。
-        /// 座標平面はコンストラクタで指定した設定（XZ/XY）に従う。
         /// </summary>
-        /// <param name="center">検索中心座標</param>
-        /// <param name="radius">検索半径</param>
-        /// <param name="results">結果を書き込むSpan</param>
-        /// <returns>見つかった要素数</returns>
         public int QueryNeighbors(Vector3 center, float radius, Span<T> results)
         {
             float radiusSq = radius * radius;
@@ -264,7 +279,7 @@ namespace ODC.Runtime
 
                         if (elemIdx < _activeCount)
                         {
-                            Vector3 pos = _elements[elemIdx].GameObject.transform.position;
+                            Vector3 pos = _elements[elemIdx].Position;
                             float dx = pos.x - center.x;
                             float db = (_useXY ? pos.y : pos.z) - centerB;
                             float distSq = dx * dx + db * db;
@@ -289,13 +304,7 @@ namespace ODC.Runtime
 
         /// <summary>
         /// 指定した中心座標と半径内にある要素を検索し、距離も返す。
-        /// 座標平面はコンストラクタで指定した設定（XZ/XY）に従う。
         /// </summary>
-        /// <param name="center">検索中心座標</param>
-        /// <param name="radius">検索半径</param>
-        /// <param name="results">結果データを書き込むSpan</param>
-        /// <param name="distances">距離を書き込むSpan</param>
-        /// <returns>見つかった要素数</returns>
         public int QueryNeighbors(Vector3 center, float radius, Span<T> results, Span<float> distances)
         {
             float radiusSq = radius * radius;
@@ -324,7 +333,7 @@ namespace ODC.Runtime
 
                         if (elemIdx < _activeCount)
                         {
-                            Vector3 pos = _elements[elemIdx].GameObject.transform.position;
+                            Vector3 pos = _elements[elemIdx].Position;
                             float dx = pos.x - center.x;
                             float db = (_useXY ? pos.y : pos.z) - centerB;
                             float distSq = dx * dx + db * db;
@@ -351,9 +360,6 @@ namespace ODC.Runtime
         /// <summary>
         /// GameObjectに関連付けられたデータを取得する。
         /// </summary>
-        /// <param name="obj">検索するGameObject</param>
-        /// <param name="data">見つかったデータ</param>
-        /// <returns>見つかった場合true</returns>
         public bool TryGetValue(GameObject obj, out T data)
         {
             if (obj == null)
@@ -361,9 +367,15 @@ namespace ODC.Runtime
                 data = null;
                 return false;
             }
+            return TryGetValue(obj.GetInstanceID(), out data);
+        }
 
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
-            if (TryGetIndexByHash(hashCode, out int index))
+        /// <summary>
+        /// int hashに関連付けられたデータを取得する。
+        /// </summary>
+        public bool TryGetValue(int hash, out T data)
+        {
+            if (TryGetIndexByHash(hash, out int index))
             {
                 data = _elements[index].Data;
                 return true;
@@ -376,23 +388,37 @@ namespace ODC.Runtime
         /// <summary>
         /// 格納されたGameObjectの現在のTransform位置を返す。
         /// </summary>
-        /// <param name="obj">位置を取得するGameObject</param>
-        /// <returns>GameObjectのTransform位置</returns>
         public Vector3 GetPosition(GameObject obj)
         {
             return obj.transform.position;
         }
 
         /// <summary>
+        /// 格納された要素の位置を返す（int hash版）。
+        /// </summary>
+        public Vector3 GetPosition(int hash)
+        {
+            if (TryGetIndexByHash(hash, out int index))
+                return _elements[index].Position;
+
+            throw new KeyNotFoundException("指定されたハッシュはコンテナに存在しません。");
+        }
+
+        /// <summary>
         /// 指定したGameObjectがコンテナに含まれているか確認する。
         /// </summary>
-        /// <param name="obj">確認するGameObject</param>
-        /// <returns>含まれている場合true</returns>
         public bool ContainsKey(GameObject obj)
         {
             if (obj == null) return false;
-            int hashCode = obj.GetHashCode() & 0x7FFFFFFF;
-            return TryGetIndexByHash(hashCode, out _);
+            return ContainsKey(obj.GetInstanceID());
+        }
+
+        /// <summary>
+        /// 指定したint hashがコンテナに含まれているか確認する。
+        /// </summary>
+        public bool ContainsKey(int hash)
+        {
+            return TryGetIndexByHash(hash, out _);
         }
 
         /// <summary>
@@ -427,11 +453,31 @@ namespace ODC.Runtime
             _cellHeads = null;
         }
 
+        // ===== 内部ヘルパー =====
+
+        private void RemoveAtIndex(int index)
+        {
+            int lastIndex = _activeCount - 1;
+
+            RemoveFromCellGrid(_elements[index].CellKey, index);
+            RemoveFromHashTable(_elements[index].HashCode, index);
+
+            if (index < lastIndex)
+            {
+                var lastElement = _elements[lastIndex];
+
+                UpdateCellGridIndex(lastElement.CellKey, lastIndex, index);
+                UpdateHashTableIndex(lastElement.HashCode, lastIndex, index);
+
+                _elements[index] = lastElement;
+            }
+
+            _elements[lastIndex] = default;
+            _activeCount--;
+        }
+
         // ===== セルキー計算 =====
 
-        /// <summary>
-        /// 選択された座標平面上の位置からセルキーを計算する。
-        /// </summary>
         private int GetCellKey(Vector3 position)
         {
             int cellA = Mathf.FloorToInt(position.x * _inverseCellSize);
