@@ -5,7 +5,18 @@ using UnityEngine;
 namespace ODC.Runtime
 {
     /// <summary>
-    /// XZ平面を使用した2D空間ハッシュコンテナ。
+    /// 2D空間ハッシュで使用する座標平面。
+    /// </summary>
+    public enum SpatialPlane2D
+    {
+        /// <summary>XZ平面（3Dゲームのトップダウン等）。position.x と position.z を使用。</summary>
+        XZ,
+        /// <summary>XY平面（2Dゲーム等）。position.x と position.y を使用。</summary>
+        XY
+    }
+
+    /// <summary>
+    /// 2D空間ハッシュコンテナ。XZ平面（3D）とXY平面（2D）の両方に対応。
     /// GameObjectをキーとしてデータを格納し、Transform位置を自動追跡する。
     /// Update()で全要素の位置を再ハッシュし、QueryNeighborsで近傍検索を行う。
     /// </summary>
@@ -38,6 +49,7 @@ namespace ODC.Runtime
         private int _maxCapacity;
         private float _cellSize;
         private float _inverseCellSize;
+        private readonly bool _useXY;
 
         // GameObjectハッシュ → インデックスのルックアップテーブル
         private int[] _buckets;
@@ -81,12 +93,14 @@ namespace ODC.Runtime
         /// </summary>
         /// <param name="cellSize">空間ハッシュのセルサイズ</param>
         /// <param name="maxCapacity">最大要素数</param>
-        public SpatialHashContainer2D(float cellSize, int maxCapacity)
+        /// <param name="plane">使用する座標平面（デフォルト: XZ）</param>
+        public SpatialHashContainer2D(float cellSize, int maxCapacity, SpatialPlane2D plane = SpatialPlane2D.XZ)
         {
             _cellSize = cellSize;
             _inverseCellSize = 1f / cellSize;
             _maxCapacity = maxCapacity;
             _activeCount = 0;
+            _useXY = plane == SpatialPlane2D.XY;
 
             _elements = new ElementData[maxCapacity];
             _dataCache = new T[maxCapacity];
@@ -215,7 +229,8 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// 指定した中心座標と半径内にある要素を検索する（XZ平面のみ）。
+        /// 指定した中心座標と半径内にある要素を検索する。
+        /// 座標平面はコンストラクタで指定した設定（XZ/XY）に従う。
         /// </summary>
         /// <param name="center">検索中心座標</param>
         /// <param name="radius">検索半径</param>
@@ -227,15 +242,17 @@ namespace ODC.Runtime
             int written = 0;
             int maxResults = results.Length;
 
+            float centerB = _useXY ? center.y : center.z;
+
             int cellRange = Mathf.CeilToInt(radius * _inverseCellSize);
             int centerCellX = Mathf.FloorToInt(center.x * _inverseCellSize);
-            int centerCellZ = Mathf.FloorToInt(center.z * _inverseCellSize);
+            int centerCellB = Mathf.FloorToInt(centerB * _inverseCellSize);
 
             for (int cx = centerCellX - cellRange; cx <= centerCellX + cellRange; cx++)
             {
-                for (int cz = centerCellZ - cellRange; cz <= centerCellZ + cellRange; cz++)
+                for (int cb = centerCellB - cellRange; cb <= centerCellB + cellRange; cb++)
                 {
-                    int cellKey = cx * 73856093 ^ cz * 19349669;
+                    int cellKey = cx * 73856093 ^ cb * 19349669;
 
                     if (!_cellHeads.TryGetValue(cellKey, out int entryIndex))
                         continue;
@@ -249,8 +266,8 @@ namespace ODC.Runtime
                         {
                             Vector3 pos = _elements[elemIdx].GameObject.transform.position;
                             float dx = pos.x - center.x;
-                            float dz = pos.z - center.z;
-                            float distSq = dx * dx + dz * dz;
+                            float db = (_useXY ? pos.y : pos.z) - centerB;
+                            float distSq = dx * dx + db * db;
 
                             if (distSq <= radiusSq)
                             {
@@ -271,7 +288,8 @@ namespace ODC.Runtime
         }
 
         /// <summary>
-        /// 指定した中心座標と半径内にある要素を検索し、距離も返す（XZ平面のみ）。
+        /// 指定した中心座標と半径内にある要素を検索し、距離も返す。
+        /// 座標平面はコンストラクタで指定した設定（XZ/XY）に従う。
         /// </summary>
         /// <param name="center">検索中心座標</param>
         /// <param name="radius">検索半径</param>
@@ -284,15 +302,17 @@ namespace ODC.Runtime
             int written = 0;
             int maxResults = Math.Min(results.Length, distances.Length);
 
+            float centerB = _useXY ? center.y : center.z;
+
             int cellRange = Mathf.CeilToInt(radius * _inverseCellSize);
             int centerCellX = Mathf.FloorToInt(center.x * _inverseCellSize);
-            int centerCellZ = Mathf.FloorToInt(center.z * _inverseCellSize);
+            int centerCellB = Mathf.FloorToInt(centerB * _inverseCellSize);
 
             for (int cx = centerCellX - cellRange; cx <= centerCellX + cellRange; cx++)
             {
-                for (int cz = centerCellZ - cellRange; cz <= centerCellZ + cellRange; cz++)
+                for (int cb = centerCellB - cellRange; cb <= centerCellB + cellRange; cb++)
                 {
-                    int cellKey = cx * 73856093 ^ cz * 19349669;
+                    int cellKey = cx * 73856093 ^ cb * 19349669;
 
                     if (!_cellHeads.TryGetValue(cellKey, out int entryIndex))
                         continue;
@@ -306,8 +326,8 @@ namespace ODC.Runtime
                         {
                             Vector3 pos = _elements[elemIdx].GameObject.transform.position;
                             float dx = pos.x - center.x;
-                            float dz = pos.z - center.z;
-                            float distSq = dx * dx + dz * dz;
+                            float db = (_useXY ? pos.y : pos.z) - centerB;
+                            float distSq = dx * dx + db * db;
 
                             if (distSq <= radiusSq)
                             {
@@ -410,13 +430,13 @@ namespace ODC.Runtime
         // ===== セルキー計算 =====
 
         /// <summary>
-        /// XZ平面上の位置からセルキーを計算する。
+        /// 選択された座標平面上の位置からセルキーを計算する。
         /// </summary>
         private int GetCellKey(Vector3 position)
         {
-            int cellX = Mathf.FloorToInt(position.x * _inverseCellSize);
-            int cellZ = Mathf.FloorToInt(position.z * _inverseCellSize);
-            return cellX * 73856093 ^ cellZ * 19349669;
+            int cellA = Mathf.FloorToInt(position.x * _inverseCellSize);
+            int cellB = Mathf.FloorToInt((_useXY ? position.y : position.z) * _inverseCellSize);
+            return cellA * 73856093 ^ cellB * 19349669;
         }
 
         // ===== ハッシュテーブル操作 =====
