@@ -111,7 +111,7 @@ namespace ODC.Runtime
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
             Vector3 pos = obj.transform.position;
-            int idx = Add(obj.GetInstanceID(), data, pos);
+            int idx = Add(obj.GetHashCode(), data, pos);
             _elements[idx].GameObject = obj;
             return idx;
         }
@@ -150,7 +150,7 @@ namespace ODC.Runtime
         public bool Remove(GameObject obj)
         {
             if (obj == null) return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
@@ -341,7 +341,7 @@ namespace ODC.Runtime
                 data = null;
                 return false;
             }
-            return TryGetValue(obj.GetInstanceID(), out data);
+            return TryGetValue(obj.GetHashCode(), out data);
         }
 
         /// <summary>
@@ -384,7 +384,7 @@ namespace ODC.Runtime
         public bool ContainsKey(GameObject obj)
         {
             if (obj == null) return false;
-            return ContainsKey(obj.GetInstanceID());
+            return ContainsKey(obj.GetHashCode());
         }
 
         /// <summary>

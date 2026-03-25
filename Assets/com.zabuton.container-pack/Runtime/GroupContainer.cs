@@ -107,7 +107,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            int idx = Add(obj.GetInstanceID(), data, groupName);
+            int idx = Add(obj.GetHashCode(), data, groupName);
             _elements[idx].GameObject = obj;
             return idx;
         }
@@ -148,7 +148,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
@@ -173,7 +173,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return MoveToGroup(obj.GetInstanceID(), newGroup);
+            return MoveToGroup(obj.GetHashCode(), newGroup);
         }
 
         /// <summary>
@@ -204,7 +204,7 @@ namespace ODC.Runtime
         public bool TryGetValue(GameObject obj, out T data, out string groupName)
         {
             if (obj != null)
-                return TryGetValue(obj.GetInstanceID(), out data, out groupName);
+                return TryGetValue(obj.GetHashCode(), out data, out groupName);
 
             data = null;
             groupName = null;
@@ -310,7 +310,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return ContainsKey(obj.GetInstanceID());
+            return ContainsKey(obj.GetHashCode());
         }
 
         /// <summary>

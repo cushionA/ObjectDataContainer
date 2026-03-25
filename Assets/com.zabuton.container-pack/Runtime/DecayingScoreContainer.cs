@@ -104,7 +104,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            AddOwner(obj.GetInstanceID());
+            AddOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -130,7 +130,7 @@ namespace ODC.Runtime
         public bool RemoveOwner(GameObject obj)
         {
             if (obj == null) return false;
-            return RemoveOwner(obj.GetInstanceID());
+            return RemoveOwner(obj.GetHashCode());
         }
 
         /// <summary>

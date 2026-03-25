@@ -105,7 +105,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            AddOwner(obj.GetInstanceID());
+            AddOwner(obj.GetHashCode());
             _owners[_ownerCount - 1] = obj;
         }
 
@@ -133,7 +133,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return RemoveOwner(obj.GetInstanceID());
+            return RemoveOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -168,7 +168,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return ContainsOwner(obj.GetInstanceID());
+            return ContainsOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -189,7 +189,7 @@ namespace ODC.Runtime
         public void StartCooldown(GameObject obj, string cooldownName, float duration)
         {
             if (obj == null) return;
-            StartCooldown(obj.GetInstanceID(), cooldownName, duration);
+            StartCooldown(obj.GetHashCode(), cooldownName, duration);
         }
 
         /// <summary>
@@ -231,7 +231,7 @@ namespace ODC.Runtime
         public bool IsCooldownReady(GameObject obj, string cooldownName)
         {
             if (obj == null) return true;
-            return IsCooldownReady(obj.GetInstanceID(), cooldownName);
+            return IsCooldownReady(obj.GetHashCode(), cooldownName);
         }
 
         /// <summary>
@@ -259,7 +259,7 @@ namespace ODC.Runtime
         public float GetRemainingTime(GameObject obj, string cooldownName)
         {
             if (obj == null) return 0f;
-            return GetRemainingTime(obj.GetInstanceID(), cooldownName);
+            return GetRemainingTime(obj.GetHashCode(), cooldownName);
         }
 
         /// <summary>
@@ -287,7 +287,7 @@ namespace ODC.Runtime
         public float GetCooldownRatio(GameObject obj, string cooldownName)
         {
             if (obj == null) return 0f;
-            return GetCooldownRatio(obj.GetInstanceID(), cooldownName);
+            return GetCooldownRatio(obj.GetHashCode(), cooldownName);
         }
 
         /// <summary>
@@ -337,7 +337,7 @@ namespace ODC.Runtime
         public int GetActiveCooldownCount(GameObject obj)
         {
             if (obj == null) return 0;
-            return GetActiveCooldownCount(obj.GetInstanceID());
+            return GetActiveCooldownCount(obj.GetHashCode());
         }
 
         /// <summary>
@@ -363,7 +363,7 @@ namespace ODC.Runtime
         public void ResetAllCooldowns(GameObject obj)
         {
             if (obj == null) return;
-            ResetAllCooldowns(obj.GetInstanceID());
+            ResetAllCooldowns(obj.GetHashCode());
         }
 
         /// <summary>
@@ -389,7 +389,7 @@ namespace ODC.Runtime
         public void ResetCooldown(GameObject obj, string cooldownName)
         {
             if (obj == null) return;
-            ResetCooldown(obj.GetInstanceID(), cooldownName);
+            ResetCooldown(obj.GetHashCode(), cooldownName);
         }
 
         /// <summary>

@@ -111,7 +111,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            AddOwner(obj.GetInstanceID());
+            AddOwner(obj.GetHashCode());
             _owners[_ownerCount - 1] = obj;
         }
 
@@ -139,7 +139,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return RemoveOwner(obj.GetInstanceID());
+            return RemoveOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -169,7 +169,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return ContainsOwner(obj.GetInstanceID());
+            return ContainsOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -191,7 +191,7 @@ namespace ODC.Runtime
             int addStacks = 1, float duration = -1f, float tickInterval = -1f)
         {
             if (obj == null) return false;
-            return Apply(obj.GetInstanceID(), effectKey, effectData, addStacks, duration, tickInterval);
+            return Apply(obj.GetHashCode(), effectKey, effectData, addStacks, duration, tickInterval);
         }
 
         /// <summary>
@@ -240,7 +240,7 @@ namespace ODC.Runtime
         public bool Remove(GameObject obj, int effectKey)
         {
             if (obj == null) return false;
-            return Remove(obj.GetInstanceID(), effectKey);
+            return Remove(obj.GetHashCode(), effectKey);
         }
 
         /// <summary>
@@ -268,7 +268,7 @@ namespace ODC.Runtime
         public bool IsActive(GameObject obj, int effectKey)
         {
             if (obj == null) return false;
-            return IsActive(obj.GetInstanceID(), effectKey);
+            return IsActive(obj.GetHashCode(), effectKey);
         }
 
         /// <summary>
@@ -293,7 +293,7 @@ namespace ODC.Runtime
         public int GetStacks(GameObject obj, int effectKey)
         {
             if (obj == null) return 0;
-            return GetStacks(obj.GetInstanceID(), effectKey);
+            return GetStacks(obj.GetHashCode(), effectKey);
         }
 
         /// <summary>
@@ -319,7 +319,7 @@ namespace ODC.Runtime
             Span<(int effectKey, TEffect effectData, int stacks, float remainingTime)> results)
         {
             if (obj == null) return 0;
-            return GetActiveEffects(obj.GetInstanceID(), results);
+            return GetActiveEffects(obj.GetHashCode(), results);
         }
 
         /// <summary>
@@ -354,7 +354,7 @@ namespace ODC.Runtime
         public int GetActiveCount(GameObject obj)
         {
             if (obj == null) return 0;
-            return GetActiveCount(obj.GetInstanceID());
+            return GetActiveCount(obj.GetHashCode());
         }
 
         /// <summary>

@@ -84,7 +84,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            return Add(obj.GetInstanceID(), data, priority, duration);
+            return Add(obj.GetHashCode(), data, priority, duration);
         }
 
         /// <summary>
@@ -121,7 +121,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
@@ -143,7 +143,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            return TryAddOrEvict(obj.GetInstanceID(), data, out evicted, priority, duration);
+            return TryAddOrEvict(obj.GetHashCode(), data, out evicted, priority, duration);
         }
 
         /// <summary>
@@ -226,7 +226,7 @@ namespace ODC.Runtime
         public void UpdatePriority(GameObject obj, float newPriority)
         {
             if (obj == null) return;
-            UpdatePriority(obj.GetInstanceID(), newPriority);
+            UpdatePriority(obj.GetHashCode(), newPriority);
         }
 
         /// <summary>
@@ -249,7 +249,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            return GetPriority(obj.GetInstanceID());
+            return GetPriority(obj.GetHashCode());
         }
 
         /// <summary>
@@ -269,7 +269,7 @@ namespace ODC.Runtime
         public bool TryGetValue(GameObject obj, out T data)
         {
             if (obj != null)
-                return TryGetValue(obj.GetInstanceID(), out data);
+                return TryGetValue(obj.GetHashCode(), out data);
 
             data = null;
             return false;
@@ -305,7 +305,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return ContainsKey(obj.GetInstanceID());
+            return ContainsKey(obj.GetHashCode());
         }
 
         /// <summary>
