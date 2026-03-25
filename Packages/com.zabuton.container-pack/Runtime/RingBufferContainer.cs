@@ -99,6 +99,69 @@ namespace ODC.Runtime
         }
 
         /// <summary>
+        /// バッファの内容を時系列順（古い→新しい）でSpanにコピーする。
+        /// コマンド入力のパターンマッチング等、連続メモリが必要な場合に使用する。
+        /// </summary>
+        /// <param name="destination">コピー先のSpan。Countと同じかそれ以上の長さが必要。</param>
+        /// <returns>コピーされた要素数</returns>
+        /// <exception cref="ArgumentException">destinationがCount未満の場合</exception>
+        public int CopyTo(Span<T> destination)
+        {
+            if (destination.Length < _count)
+                throw new ArgumentException($"コピー先が不足しています。必要={_count}, 実際={destination.Length}");
+
+            if (_count == 0) return 0;
+
+            int tail = _head + _count;
+            if (tail <= _capacity)
+            {
+                // ラップなし: 1ブロックコピー
+                new ReadOnlySpan<T>(_buffer, _head, _count).CopyTo(destination);
+            }
+            else
+            {
+                // ラップあり: 2ブロックコピー
+                int firstLen = _capacity - _head;
+                new ReadOnlySpan<T>(_buffer, _head, firstLen).CopyTo(destination);
+                new ReadOnlySpan<T>(_buffer, 0, _count - firstLen).CopyTo(destination.Slice(firstLen));
+            }
+
+            return _count;
+        }
+
+        /// <summary>
+        /// バッファの内容をゼロコピーで2つのReadOnlySpanとして返す。
+        /// first → second の順で読むと時系列順（古い→新しい）になる。
+        /// ラップしていない場合、secondは空になる。
+        /// </summary>
+        /// <param name="first">前半部分（古い側）</param>
+        /// <param name="second">後半部分（新しい側）。ラップなしの場合は空。</param>
+        public void AsSpans(out ReadOnlySpan<T> first, out ReadOnlySpan<T> second)
+        {
+            if (_count == 0)
+            {
+                first = ReadOnlySpan<T>.Empty;
+                second = ReadOnlySpan<T>.Empty;
+                return;
+            }
+
+            int tail = _head + _count;
+            if (tail <= _capacity)
+            {
+                // ラップなし
+                first = new ReadOnlySpan<T>(_buffer, _head, _count);
+                second = ReadOnlySpan<T>.Empty;
+            }
+            else
+            {
+                // ラップあり
+                int firstLen = _capacity - _head;
+                first = new ReadOnlySpan<T>(_buffer, _head, firstLen);
+                second = new ReadOnlySpan<T>(_buffer, 0, _count - firstLen);
+            }
+        }
+
+        /// <summary>
         /// バッファの全要素をクリアし、初期状態に戻す。
         /// </summary>
         public void Clear()

@@ -1,0 +1,16 @@
+{
+    "name": "ODC.Examples",
+    "rootNamespace": "ODC.Examples",
+    "references": [
+        "GUID:601efe41ae05d5d47872ab143426877c"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
