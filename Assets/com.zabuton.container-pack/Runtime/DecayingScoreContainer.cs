@@ -295,11 +295,11 @@ namespace ODC.Runtime
                         scores[insertAt] = s;
                         count++;
                     }
-                    else if (s > scores[count - 1])
+                    else if (s > scores[maxK - 1])
                     {
                         // 最下位より大きければ挿入
-                        int insertAt = count - 1;
-                        for (int j = 0; j < count - 1; j++)
+                        int insertAt = maxK - 1;
+                        for (int j = 0; j < maxK - 1; j++)
                         {
                             if (s > scores[j])
                             {
@@ -308,7 +308,7 @@ namespace ODC.Runtime
                             }
                         }
 
-                        for (int j = count - 1; j > insertAt; j--)
+                        for (int j = maxK - 1; j > insertAt; j--)
                         {
                             results[j] = results[j - 1];
                             scores[j] = scores[j - 1];
@@ -320,7 +320,7 @@ namespace ODC.Runtime
                 }
             }
 
-            return count;
+            return Math.Min(count, maxK);
         }
 
         /// <summary>
