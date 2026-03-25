@@ -185,7 +185,7 @@ namespace ODC.Tests
             var weights = new float[] { 1f, 1f };
             var sampler = WeightedSamplerContainer<DropItem>.Build(items, weights);
 
-            Span<DropItem> results = stackalloc DropItem[5];
+            var results = new DropItem[5];
             Assert.Throws<ArgumentException>(() => sampler.SampleDistinct(results, 3));
             sampler.Dispose();
         }

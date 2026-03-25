@@ -211,8 +211,7 @@ namespace ODC.Runtime
         /// <param name="deltaTime">経過時間（秒）</param>
         public void Tick(float deltaTime)
         {
-            int i = _tempCount - 1;
-            while (i >= 0)
+            for (int i = _tempCount - 1; i >= 0; i--)
             {
                 _tempRelations[i].RemainingTime -= deltaTime;
                 if (_tempRelations[i].RemainingTime <= 0f)
@@ -232,11 +231,8 @@ namespace ODC.Runtime
                     }
                     _tempRelations[lastIndex] = default;
                     _tempCount--;
-                    // BackSwapで新要素が来た可能性 → iをデクリメントしない
-                }
-                else
-                {
-                    i--;
+                    // BackSwapで末尾が現在位置に来るが、逆順走査なので
+                    // 移動元(lastIndex)は既に処理済み → 再チェック不要
                 }
             }
         }

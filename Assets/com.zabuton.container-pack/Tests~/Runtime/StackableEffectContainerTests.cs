@@ -266,7 +266,7 @@ namespace ODC.Tests
             container.Apply(go, Key_Poison, new PoisonEffect(10f), duration: 1f);
 
             int expiredKey = -1;
-            container.TickAll(2f, onExpire: (hash, key, effect) =>
+            container.TickAll(2f, onExpire: (int hash, int key, in PoisonEffect effect) =>
             {
                 expiredKey = key;
             });
@@ -286,7 +286,7 @@ namespace ODC.Tests
 
             int tickCount = 0;
             // 1秒経過 → 0.5s間隔で2回tickされるはず
-            container.TickAll(1f, onTick: (hash, key, effect, stacks) =>
+            container.TickAll(1f, onTick: (int hash, int key, in PoisonEffect effect, int stacks) =>
             {
                 tickCount++;
             });
@@ -374,7 +374,7 @@ namespace ODC.Tests
                 duration: 10f, tickInterval: 0.5f);
 
             int tickCount = 0;
-            container.TickAll(2.0f, onTick: (hash, key, data, stacks) =>
+            container.TickAll(2.0f, onTick: (int hash, int key, in PoisonEffect data, int stacks) =>
             {
                 tickCount++;
             });

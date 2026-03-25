@@ -140,19 +140,13 @@ namespace ODC.Runtime
             if (!TryGetIndexByHash(hashCode, out int ownerIndex))
                 return false;
 
-            // BackSwapで末尾要素が現在位置に移動するため、
-            // 移動された要素も同オーナーの可能性がある → whileで再チェック
-            int i = _effectCount - 1;
-            while (i >= 0)
+            // 逆順走査でBackSwap削除：末尾要素が現在位置に移動するが、
+            // 移動元は既に走査済みなので再チェック不要
+            for (int i = _effectCount - 1; i >= 0; i--)
             {
                 if (_effects[i].OwnerIndex == ownerIndex)
                 {
                     RemoveEffectAtIndex(i);
-                    // BackSwapで_effects[i]に新しい要素が来た可能性 → iをデクリメントしない
-                }
-                else
-                {
-                    i--;
                 }
             }
 
