@@ -1,50 +1,114 @@
-# ObjectDataContainer (Zabuton Container Pack)
+# Zabuton Container Pack
 
-効率的にオブジェクトのデータを管理するUnity用ツール。
+[![Unity 6+](https://img.shields.io/badge/Unity-6000.0%2B-blue)](https://unity.com)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](Assets/com.zabuton.container-pack/LICENSE.md)
 
-## 機能
+High-performance data containers for Unity with Source Generator support.
 
-### Source Generator
-`[ContainerSetting]` 属性から高性能なゼロアロケーションコンテナを自動生成。SoA メモリレイアウトと `UnsafeList<T>` によるキャッシュフレンドリーな連続アクセスを実現。
+**[日本語版はこちら / Japanese](README_JP.md)**
 
-### ランタイムコンテナ (21種)
-ゲーム開発でよく使うパターン向けの汎用コンテナ。全て `ODC.Runtime` 名前空間。
+## Features
 
-| カテゴリ | コンテナ | 概要 |
-|---------|---------|------|
-| 空間 | `SpatialHashContainer2D / 3D` | 空間ハッシュによる近傍検索 |
-| プール | `PriorityPoolContainer<T>` | 優先度ベースのオブジェクトプール |
-| バッファ | `RingBufferContainer<T>` | 固定サイズリングバッファ |
-| タイマー | `CooldownContainer` | クールダウン管理 |
-| タイマー | `TimedDataContainer<T>` | 自動期限付きデータ |
-| タイマー | `NotifyTimedDataContainer<T>` | コールバック付き期限データ |
-| 状態 | `StateMapContainer<TState>` | ステートマシン |
-| グループ | `GroupContainer<TGroup>` | グループ管理 |
-| キャッシュ | `ComponentCache<T>` | GetComponentキャッシュ |
-| 集合 | `SparseSetContainer<T>` | 疎密集合 (dense配列 + ハッシュ) |
-| 蓄積 | `ThresholdAccumulatorContainer` | 閾値到達判定付き蓄積器 |
-| 確率 | `WeightedSamplerContainer<T>` | Walker's Alias法 O(1)重み付き抽選 |
-| ビット | `BitFlagTableContainer` | ハッシュ×ビットフラグテーブル |
-| スロット | `FixedSlotContainer<T>` | エンティティ毎の固定Nスロット |
-| 関係 | `FactionRelationContainer` | 勢力間関係行列 |
-| 重複排除 | `HitDeduplicationContainer` | ヒット重複排除 (貫通対応) |
-| コンボ | `FlagComboLookupContainer<TEffect>` | フラグ組み合わせ→エフェクト検索 |
-| 評価 | `ScoredCandidateBuffer<T>` | スコア付き候補バッファ |
-| シーケンス | `MultiPartySequenceContainer<TState>` | 複数参加者シーケンス |
-| エフェクト | `StackableEffectContainer<TEffect>` | スタック可能な時限エフェクト |
+- **Source Generator**: Auto-generates optimized containers from `[ContainerSetting]` attribute — zero-allocation Add/Remove/Get with SoA memory layout
+- **Runtime Containers**: 21 ready-to-use utility containers for common game patterns
 
-## ドキュメント
+| Category | Container | Use Case |
+|----------|-----------|----------|
+| Spatial | `SpatialHashContainer2D / 3D` | Spatial hashing for neighbor queries |
+| Pool | `PriorityPoolContainer<T>` | Priority-based pool with FIFO eviction |
+| Buffer | `RingBufferContainer<T>` | Fixed-size circular buffer |
+| Timer | `CooldownContainer` | Cooldown management per GameObject |
+| Timer | `TimedDataContainer<T>` | Time-limited data storage |
+| Timer | `NotifyTimedDataContainer<T>` | Timed data with expiry callbacks |
+| State | `StateMapContainer<TState>` | State machine per GameObject |
+| Group | `GroupContainer<TGroup>` | Group-based object management |
+| Cache | `ComponentCache<T>` | Cached component lookups |
+| Set | `SparseSetContainer<T>` | Sparse set (dense array + hash) |
+| Accumulator | `ThresholdAccumulatorContainer` | Accumulator with threshold trigger |
+| Probability | `WeightedSamplerContainer<T>` | Walker's Alias O(1) weighted sampling |
+| Bit | `BitFlagTableContainer` | Hash × bit-flag table |
+| Slot | `FixedSlotContainer<T>` | Fixed N-slot per entity |
+| Relation | `FactionRelationContainer` | Faction relation matrix |
+| Dedup | `HitDeduplicationContainer` | Hit deduplication (penetration-safe) |
+| Combo | `FlagComboLookupContainer<TEffect>` | Flag combination → effect lookup |
+| Score | `ScoredCandidateBuffer<T>` | Scored candidate buffer |
+| Sequence | `MultiPartySequenceContainer<TState>` | Multi-party sequence |
+| Effect | `StackableEffectContainer<TEffect>` | Stackable timed effects |
+
+## Documentation
 
 - [Wiki](https://github.com/cushionA/ObjectDataContainer/wiki)
-- [Qiita 解説記事](https://qiita.com/cushionA/items/c86d2eceb3c11c56ca7f)
+- [Qiita article](https://qiita.com/cushionA/items/c86d2eceb3c11c56ca7f)
 
-## インストール
+## Installation
 
-Unity Package Manager → Add package from git URL:
+### Via Git URL (Unity Package Manager)
+
 ```
-https://github.com/cushionA/ObjectDataContainer.git
+https://github.com/cushionA/ObjectDataContainer.git#package
 ```
 
-## ライセンス
+1. Open **Window > Package Manager**
+2. Click **+** > **Add package from git URL...**
+3. Paste the URL above
 
-MIT License
+### Requirements
+
+- Unity 6000.0+
+- Burst 1.8.23+
+- Collections 2.4.3+
+- Mathematics 1.3.2+
+
+## Quick Start
+
+### Source Generator
+
+```csharp
+using ODC.Attributes;
+
+public struct Health { public float hp; public int maxHp; }
+public struct Movement { public float speed; }
+public class AI : MonoBehaviour { public float hpRate; }
+
+[ContainerSetting(
+    structType: new[] { typeof(Health), typeof(Movement) },
+    classType: new[] { typeof(AI) }
+)]
+public partial class EnemyContainer
+{
+    public partial void Dispose();
+}
+```
+
+```csharp
+var container = new EnemyContainer(1000);
+
+container.Add(gameObject,
+    new Health { hp = 100, maxHp = 100 },
+    new Movement { speed = 5f },
+    ai
+);
+
+if (container.TryGetValue(gameObject, out var health, out var movement, out var ai, out int index))
+{
+    // Zero-allocation access
+}
+
+container.Remove(gameObject);
+container.Dispose();
+```
+
+### Runtime Containers
+
+```csharp
+using ODC.Runtime;
+
+var pool = new PriorityPoolContainer<BuffData>(maxCapacity: 10);
+pool.Add(gameObject, buffData, priority: 5f, duration: 10f);
+pool.TryAddOrEvict(newObj, newBuff, out var evicted, priority: 3f);
+pool.Update(Time.deltaTime, onExpired: buff => Debug.Log($"Expired: {buff}"));
+```
+
+## License
+
+[MIT](Assets/com.zabuton.container-pack/LICENSE.md)
