@@ -32,9 +32,12 @@ jobs:
           # Checkout package contents from main
           git checkout main -- Assets/com.zabuton.container-pack/
 
-          # Move to root
-          cp -r Assets/com.zabuton.container-pack/* .
-          cp -r "Assets/com.zabuton.container-pack/Tests~" . 2>/dev/null || true
+          # Move to root (exclude .meta files from Assets/ level)
+          cd Assets/com.zabuton.container-pack
+          find . -maxdepth 1 -not -name '.' -not -name '..' | while read item; do
+            cp -r "$item" ../../"$(basename "$item")"
+          done
+          cd ../..
           rm -rf Assets/
 
           # Commit and push
@@ -43,5 +46,5 @@ jobs:
             echo "No changes to package"
           else
             git commit -m "chore: sync package from main $(git log main -1 --format='%h')"
-            git push origin package --force
+            git push origin package --force-with-lease
           fi
