@@ -88,7 +88,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            Add(obj.GetInstanceID(), initialState);
+            Add(obj.GetHashCode(), initialState);
             _gameObjects[_activeCount - 1] = obj;
         }
 
@@ -122,7 +122,7 @@ namespace ODC.Runtime
         public bool Remove(GameObject obj)
         {
             if (obj == null) return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
@@ -206,7 +206,7 @@ namespace ODC.Runtime
         public bool SetState(GameObject obj, TState newState)
         {
             if (obj == null) return false;
-            int hash = obj.GetInstanceID();
+            int hash = obj.GetHashCode();
 
             if (TryGetIndexByHash(hash, out int index))
             {
@@ -263,7 +263,7 @@ namespace ODC.Runtime
                 current = default;
                 return false;
             }
-            return TryGetState(obj.GetInstanceID(), out current);
+            return TryGetState(obj.GetHashCode(), out current);
         }
 
         /// <summary>
@@ -293,7 +293,7 @@ namespace ODC.Runtime
                 elapsed = 0f;
                 return false;
             }
-            return TryGetState(obj.GetInstanceID(), out current, out previous, out elapsed);
+            return TryGetState(obj.GetHashCode(), out current, out previous, out elapsed);
         }
 
         /// <summary>
@@ -403,7 +403,7 @@ namespace ODC.Runtime
         public bool ContainsKey(GameObject obj)
         {
             if (obj == null) return false;
-            return ContainsKey(obj.GetInstanceID());
+            return ContainsKey(obj.GetHashCode());
         }
 
         /// <summary>

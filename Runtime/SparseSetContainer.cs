@@ -102,7 +102,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            Set(obj.GetInstanceID(), value);
+            Set(obj.GetHashCode(), value);
         }
 
         /// <summary>
@@ -128,7 +128,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
@@ -150,7 +150,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return Contains(obj.GetInstanceID());
+            return Contains(obj.GetHashCode());
         }
 
         /// <summary>
@@ -180,7 +180,7 @@ namespace ODC.Runtime
                 value = default;
                 return false;
             }
-            return TryGet(obj.GetInstanceID(), out value);
+            return TryGet(obj.GetHashCode(), out value);
         }
 
         /// <summary>
@@ -203,7 +203,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            return ref GetRef(obj.GetInstanceID());
+            return ref GetRef(obj.GetHashCode());
         }
 
         /// <summary>

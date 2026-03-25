@@ -101,7 +101,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            AddOwner(obj.GetInstanceID());
+            AddOwner(obj.GetHashCode());
             _owners[_ownerCount - 1] = obj;
         }
 
@@ -129,7 +129,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return RemoveOwner(obj.GetInstanceID());
+            return RemoveOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -159,7 +159,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return ContainsOwner(obj.GetInstanceID());
+            return ContainsOwner(obj.GetHashCode());
         }
 
         /// <summary>
@@ -181,7 +181,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            Register(obj.GetInstanceID(), key, threshold);
+            Register(obj.GetHashCode(), key, threshold);
         }
 
         /// <summary>
@@ -220,7 +220,7 @@ namespace ODC.Runtime
         public bool Add(GameObject obj, int key, float amount, bool carryOverflow = false)
         {
             if (obj == null) return false;
-            return Add(obj.GetInstanceID(), key, amount, carryOverflow);
+            return Add(obj.GetHashCode(), key, amount, carryOverflow);
         }
 
         /// <summary>
@@ -261,7 +261,7 @@ namespace ODC.Runtime
         public float Get(GameObject obj, int key)
         {
             if (obj == null) return 0f;
-            return Get(obj.GetInstanceID(), key);
+            return Get(obj.GetHashCode(), key);
         }
 
         /// <summary>
@@ -286,7 +286,7 @@ namespace ODC.Runtime
         public float GetNormalized(GameObject obj, int key)
         {
             if (obj == null) return 0f;
-            return GetNormalized(obj.GetInstanceID(), key);
+            return GetNormalized(obj.GetHashCode(), key);
         }
 
         /// <summary>
@@ -315,7 +315,7 @@ namespace ODC.Runtime
         public void SetThreshold(GameObject obj, int key, float threshold)
         {
             if (obj == null) return;
-            SetThreshold(obj.GetInstanceID(), key, threshold);
+            SetThreshold(obj.GetHashCode(), key, threshold);
         }
 
         /// <summary>
@@ -342,7 +342,7 @@ namespace ODC.Runtime
         public void Reset(GameObject obj, int key)
         {
             if (obj == null) return;
-            Reset(obj.GetInstanceID(), key);
+            Reset(obj.GetHashCode(), key);
         }
 
         /// <summary>

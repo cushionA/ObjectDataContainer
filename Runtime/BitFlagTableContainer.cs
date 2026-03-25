@@ -87,7 +87,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 throw new ArgumentNullException(nameof(obj));
-            Add(obj.GetInstanceID());
+            Add(obj.GetHashCode());
         }
 
         /// <summary>
@@ -111,7 +111,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return Remove(obj.GetInstanceID());
+            return Remove(obj.GetHashCode());
         }
 
         /// <summary>
@@ -129,7 +129,7 @@ namespace ODC.Runtime
         {
             if (obj == null)
                 return false;
-            return ContainsKey(obj.GetInstanceID());
+            return ContainsKey(obj.GetHashCode());
         }
 
         /// <summary>
@@ -149,7 +149,7 @@ namespace ODC.Runtime
         public void SetFlag(GameObject obj, ulong flagMask)
         {
             if (obj == null) throw new ArgumentNullException(nameof(obj));
-            SetFlag(obj.GetInstanceID(), flagMask);
+            SetFlag(obj.GetHashCode(), flagMask);
         }
 
         /// <summary>
@@ -169,7 +169,7 @@ namespace ODC.Runtime
         public void ClearFlag(GameObject obj, ulong flagMask)
         {
             if (obj == null) throw new ArgumentNullException(nameof(obj));
-            ClearFlag(obj.GetInstanceID(), flagMask);
+            ClearFlag(obj.GetHashCode(), flagMask);
         }
 
         /// <summary>
@@ -189,7 +189,7 @@ namespace ODC.Runtime
         public void ToggleFlag(GameObject obj, ulong flagMask)
         {
             if (obj == null) throw new ArgumentNullException(nameof(obj));
-            ToggleFlag(obj.GetInstanceID(), flagMask);
+            ToggleFlag(obj.GetHashCode(), flagMask);
         }
 
         /// <summary>
@@ -210,7 +210,7 @@ namespace ODC.Runtime
         public bool HasAll(GameObject obj, ulong flagMask)
         {
             if (obj == null) return false;
-            return HasAll(obj.GetInstanceID(), flagMask);
+            return HasAll(obj.GetHashCode(), flagMask);
         }
 
         /// <summary>
@@ -231,7 +231,7 @@ namespace ODC.Runtime
         public bool HasAny(GameObject obj, ulong flagMask)
         {
             if (obj == null) return false;
-            return HasAny(obj.GetInstanceID(), flagMask);
+            return HasAny(obj.GetHashCode(), flagMask);
         }
 
         /// <summary>
